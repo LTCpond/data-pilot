@@ -1,8 +1,9 @@
 package com.ltcpond.datapilot.core.datasource;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.datasource.connection.ConnectionTestResult;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
-import com.ltcpond.datapilot.datasource.connection.ExternalDatasourceException;
 import com.ltcpond.datapilot.datasource.connection.MysqlConnectionTester;
 import com.ltcpond.datapilot.datasource.crypto.CredentialCipher;
 import com.ltcpond.datapilot.datasource.entity.DatasourceEntity;
@@ -43,16 +44,19 @@ public class DatasourceService {
             ConnectionTestResult result = connectionTester.test(connectionInfo(command));
             return new ConnectionTestView(true, result.databaseProduct(), result.databaseVersion());
         } catch (IllegalArgumentException exception) {
-            throw new InvalidDatasourceException();
-        } catch (ExternalDatasourceException exception) {
-            throw new DatasourceConnectionException();
+            throw new AppException(ResponseCode.INVALID_DATASOURCE_CONFIGURATION);
+        } catch (AppException exception) {
+            if (exception.getResponseCode() != ResponseCode.EXTERNAL_DATASOURCE_OPERATION_FAILED) {
+                throw exception;
+            }
+            throw new AppException(ResponseCode.DATASOURCE_UNREACHABLE);
         }
     }
 
     public DatasourceView create(CreateDatasourceCommand command) {
         String normalizedName = command.name().trim();
         if (store.findByName(normalizedName).isPresent()) {
-            throw new DuplicateDatasourceException();
+            throw new AppException(ResponseCode.DUPLICATE_DATASOURCE_NAME);
         }
 
         testConnection(new ConnectionTestCommand(command.jdbcUrl(), command.username(), command.password()));
@@ -72,7 +76,7 @@ public class DatasourceService {
         try {
             return toView(store.insert(entity));
         } catch (DuplicateKeyException exception) {
-            throw new DuplicateDatasourceException();
+            throw new AppException(ResponseCode.DUPLICATE_DATASOURCE_NAME);
         }
     }
 
@@ -110,12 +114,15 @@ public class DatasourceService {
                     result.syncedAt(),
                     ragStatus,
                     ragDocumentCount);
-        } catch (ExternalDatasourceException exception) {
+        } catch (AppException exception) {
             markErrorSafely(datasourceId);
-            throw new DatasourceConnectionException();
+            if (exception.getResponseCode() == ResponseCode.EXTERNAL_DATASOURCE_OPERATION_FAILED) {
+                throw new AppException(ResponseCode.DATASOURCE_UNREACHABLE);
+            }
+            throw new AppException(ResponseCode.DATASOURCE_METADATA_SYNC_FAILED);
         } catch (RuntimeException exception) {
             markErrorSafely(datasourceId);
-            throw new MetadataSyncException();
+            throw new AppException(ResponseCode.DATASOURCE_METADATA_SYNC_FAILED);
         }
     }
 
@@ -167,7 +174,8 @@ public class DatasourceService {
     }
 
     private DatasourceEntity requiredDatasource(long datasourceId) {
-        return store.findById(datasourceId).orElseThrow(DatasourceNotFoundException::new);
+        return store.findById(datasourceId)
+                .orElseThrow(() -> new AppException(ResponseCode.DATASOURCE_NOT_FOUND));
     }
 
     private DatasourceConnectionInfo connectionInfo(ConnectionTestCommand command) {

@@ -3,7 +3,8 @@ package com.ltcpond.datapilot.core.rag;
 import com.ltcpond.datapilot.ai.rag.RagProperties;
 import com.ltcpond.datapilot.ai.rag.SchemaVectorDocument;
 import com.ltcpond.datapilot.ai.rag.SchemaVectorIndex;
-import com.ltcpond.datapilot.core.datasource.DatasourceNotFoundException;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.datasource.DatasourceSchemaView;
 import com.ltcpond.datapilot.core.datasource.DatasourceService;
 import com.ltcpond.datapilot.datasource.entity.DatasourceEntity;
@@ -28,15 +29,15 @@ public class SchemaIndexService {
 
     public RagIndexResultView rebuild(long datasourceId) {
         DatasourceEntity datasource = store.findById(datasourceId)
-                .orElseThrow(DatasourceNotFoundException::new);
+                .orElseThrow(() -> new AppException(ResponseCode.DATASOURCE_NOT_FOUND));
         if (!properties.isEnabled()) {
             store.markRagError(datasourceId, "RAG_DISABLED");
-            throw new RagIndexException();
+            throw new AppException(ResponseCode.SCHEMA_VECTOR_INDEX_FAILED, "RAG_DISABLED");
         }
         DatasourceSchemaView schema = datasourceService.schema(datasourceId);
         if (schema.tables().isEmpty()) {
             store.markRagError(datasourceId, "SCHEMA_EMPTY");
-            throw new RagIndexException();
+            throw new AppException(ResponseCode.SCHEMA_VECTOR_INDEX_FAILED, "SCHEMA_EMPTY");
         }
 
         String newVersion = UUID.randomUUID().toString();
@@ -64,7 +65,7 @@ public class SchemaIndexService {
             if (datasource.getRagIndexVersion() != null) {
                 // 旧活动版本只读可用，不做删除。
             }
-            throw new RagIndexException();
+            throw new AppException(ResponseCode.SCHEMA_VECTOR_INDEX_FAILED, "RAG_INDEX_FAILED");
         }
     }
 

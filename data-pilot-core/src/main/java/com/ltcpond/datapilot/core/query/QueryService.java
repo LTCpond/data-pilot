@@ -1,14 +1,13 @@
 package com.ltcpond.datapilot.core.query;
 
-import com.ltcpond.datapilot.ai.AiGenerationException;
-import com.ltcpond.datapilot.ai.AiModelUnavailableException;
 import com.ltcpond.datapilot.ai.DataPilotAiProperties;
 import com.ltcpond.datapilot.ai.SqlGenerationRequest;
 import com.ltcpond.datapilot.ai.SqlGenerationOutcome;
 import com.ltcpond.datapilot.ai.SqlGenerationResult;
 import com.ltcpond.datapilot.ai.SqlGenerator;
 import com.ltcpond.datapilot.ai.SqlRepairRequest;
-import com.ltcpond.datapilot.core.datasource.DatasourceNotFoundException;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.datasource.DatasourceSchemaView;
 import com.ltcpond.datapilot.core.datasource.DatasourceService;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
@@ -16,7 +15,6 @@ import com.ltcpond.datapilot.datasource.crypto.CredentialCipher;
 import com.ltcpond.datapilot.datasource.entity.DatasourceEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryAttemptEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryTaskEntity;
-import com.ltcpond.datapilot.datasource.query.QueryExecutionException;
 import com.ltcpond.datapilot.datasource.query.QueryExecutionResult;
 import com.ltcpond.datapilot.datasource.query.ReadOnlyQueryExecutor;
 import com.ltcpond.datapilot.datasource.store.DatasourceStore;
@@ -68,13 +66,13 @@ public class QueryService {
     /** 执行已经持久化的任务；结果交付成功后才进入 SUCCEEDED。 */
     public QueryResultView executeTask(long taskId, QueryResultSink resultSink) {
         QueryTaskEntity task = taskStore.findTask(taskId)
-                .orElseThrow(QueryTaskNotFoundException::new);
+                .orElseThrow(() -> new AppException(ResponseCode.QUERY_TASK_NOT_FOUND));
         ensureCreatedOrCancel(task);
         DatasourceEntity datasource = requiredReadyDatasource(task.getDatasourceId());
         int maxRows = task.getMaxRows();
         DatasourceSchemaView fullSchema = datasourceService.schema(task.getDatasourceId());
         if (fullSchema.tables().isEmpty()) {
-            throw new QueryNotReadyException();
+            throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
         }
 
         Instant startedAt = Instant.now();
@@ -99,7 +97,7 @@ public class QueryService {
                     insertAttempt(task, attemptNo, attemptType(attemptNo), generation,
                             "REJECTED", "QUESTION_NOT_ANSWERABLE");
                     fail(task, "QUESTION_NOT_ANSWERABLE", startedAt);
-                    throw new QueryRejectedException();
+                    throw new AppException(ResponseCode.QUERY_REJECTED);
                 }
 
                 SqlValidationResult validation = sqlValidator.validate(new SqlValidationRequest(
@@ -112,7 +110,7 @@ public class QueryService {
                     insertAttempt(task, attemptNo, attemptType(attemptNo), generation, "REJECTED", reason);
                     if (task.getRepairCount() >= properties.getMaximumRepairAttempts()) {
                         fail(task, "SQL_VALIDATION_FAILED", startedAt);
-                        throw new QueryRejectedException();
+                        throw new AppException(ResponseCode.QUERY_REJECTED);
                     }
                     generation = repair(task, task.getQuestion(), schemaPrompt, generation.result().sql(), reason);
                     attemptNo++;
@@ -128,41 +126,52 @@ public class QueryService {
                     insertAttempt(task, attemptNo, attemptType(attemptNo), generation, "VALID", null);
                     return succeed(task, generation.result(), validation.executableSql(), execution,
                             startedAt, retrieval.view(), resultSink);
-                } catch (QueryExecutionException exception) {
+                } catch (AppException exception) {
+                    if (exception.getResponseCode() != ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED) {
+                        throw exception;
+                    }
+                    String detailCode = exception.getDetailCode() == null
+                            ? "QUERY_EXECUTION_FAILED"
+                            : exception.getDetailCode();
                     checkCancellation(task);
                     insertAttempt(task, attemptNo, attemptType(attemptNo), generation,
-                            "EXECUTION_FAILED", exception.getErrorCode());
-                    if (!isRepairableExecutionError(exception.getErrorCode())
+                            "EXECUTION_FAILED", detailCode);
+                    if (!isRepairableExecutionError(detailCode)
                             || task.getRepairCount() >= properties.getMaximumRepairAttempts()) {
-                        fail(task, exception.getErrorCode(), startedAt);
-                        throw new QueryFailedException();
+                        fail(task, detailCode, startedAt);
+                        throw new AppException(ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED);
                     }
                     generation = repair(task, task.getQuestion(), schemaPrompt,
-                            validation.executableSql(), exception.getErrorCode());
+                            validation.executableSql(), detailCode);
                     attemptNo++;
                 }
             }
-        } catch (QueryResultDeliveryException exception) {
-            failSafely(task, "RESULT_STORE_UNAVAILABLE", startedAt);
-            throw exception;
-        } catch (QueryCancelledException exception) {
-            throw exception;
-        } catch (AiModelUnavailableException exception) {
-            failSafely(task, "AI_MODEL_UNAVAILABLE", startedAt);
-            throw exception;
-        } catch (AiGenerationException exception) {
-            failSafely(task, exception.getErrorCode(), startedAt);
-            throw exception;
-        } catch (QueryRejectedException | QueryFailedException exception) {
+        } catch (AppException exception) {
+            switch (exception.getResponseCode()) {
+                case QUERY_RESULT_DELIVERY_FAILED -> failSafely(task, "RESULT_STORE_UNAVAILABLE", startedAt);
+                case AI_MODEL_UNAVAILABLE -> failSafely(task, "AI_MODEL_UNAVAILABLE", startedAt);
+                case AI_SQL_GENERATION_FAILED -> failSafely(
+                        task,
+                        exception.getDetailCode() == null ? "AI_GENERATION_FAILED" : exception.getDetailCode(),
+                        startedAt);
+                case QUERY_TASK_CANCELLED, QUERY_REJECTED, READ_ONLY_QUERY_EXECUTION_FAILED -> {
+                    // 对应状态已经由当前流程持久化，不重复覆盖。
+                }
+                default -> {
+                    failSafely(task, "QUERY_WORKFLOW_FAILED", startedAt);
+                    throw new AppException(ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED);
+                }
+            }
             throw exception;
         } catch (RuntimeException exception) {
             failSafely(task, "QUERY_WORKFLOW_FAILED", startedAt);
-            throw new QueryFailedException();
+            throw new AppException(ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED);
         }
     }
 
     public QueryTaskView get(long queryId) {
-        return toView(taskStore.findTask(queryId).orElseThrow(QueryTaskNotFoundException::new));
+        return toView(taskStore.findTask(queryId)
+                .orElseThrow(() -> new AppException(ResponseCode.QUERY_TASK_NOT_FOUND)));
     }
 
     public List<QueryTaskView> list(long datasourceId) {
@@ -172,7 +181,7 @@ public class QueryService {
 
     public QueryTaskView cancel(long queryId) {
         QueryTaskEntity task = taskStore.findTask(queryId)
-                .orElseThrow(QueryTaskNotFoundException::new);
+                .orElseThrow(() -> new AppException(ResponseCode.QUERY_TASK_NOT_FOUND));
         QueryStatus status = QueryStatus.valueOf(task.getStatus());
         if (isTerminal(status)) {
             return toView(task);
@@ -204,9 +213,9 @@ public class QueryService {
 
     private DatasourceEntity requiredReadyDatasource(long datasourceId) {
         DatasourceEntity datasource = datasourceStore.findById(datasourceId)
-                .orElseThrow(DatasourceNotFoundException::new);
+                .orElseThrow(() -> new AppException(ResponseCode.DATASOURCE_NOT_FOUND));
         if (!"READY".equals(datasource.getStatus())) {
-            throw new QueryNotReadyException();
+            throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
         }
         return datasource;
     }
@@ -214,7 +223,7 @@ public class QueryService {
     private QueryTaskEntity createTask(CreateQueryCommand command, String executionMode) {
         requiredReadyDatasource(command.datasourceId());
         if (datasourceService.schema(command.datasourceId()).tables().isEmpty()) {
-            throw new QueryNotReadyException();
+            throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
         }
         LocalDateTime now = LocalDateTime.now();
         QueryTaskEntity task = new QueryTaskEntity();
@@ -385,10 +394,10 @@ public class QueryService {
         QueryStatus status = QueryStatus.valueOf(task.getStatus());
         if (status == QueryStatus.CANCEL_REQUESTED) {
             stateMachine.transition(task, QueryStatus.CANCELLED);
-            throw new QueryCancelledException();
+            throw new AppException(ResponseCode.QUERY_TASK_CANCELLED);
         }
         if (status != QueryStatus.CREATED) {
-            throw new IllegalStateException("Query task is not executable");
+            throw new IllegalStateException("查询任务当前不可执行");
         }
     }
 
@@ -402,7 +411,7 @@ public class QueryService {
         if (status == QueryStatus.CANCEL_REQUESTED) {
             stateMachine.transition(task, QueryStatus.CANCELLED);
         }
-        throw new QueryCancelledException();
+        throw new AppException(ResponseCode.QUERY_TASK_CANCELLED);
     }
 
     private boolean isTerminal(QueryStatus status) {

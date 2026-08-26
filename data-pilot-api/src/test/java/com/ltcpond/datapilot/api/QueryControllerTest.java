@@ -1,8 +1,7 @@
 package com.ltcpond.datapilot.api;
 
-import com.ltcpond.datapilot.ai.AiModelUnavailableException;
-import com.ltcpond.datapilot.core.query.QueryNotReadyException;
-import com.ltcpond.datapilot.core.query.QueryRejectedException;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.QueryResultView;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.core.query.RetrievalView;
@@ -49,21 +48,21 @@ class QueryControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"question\":\"\",\"maxRows\":201}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("invalid request"));
+                .andExpect(jsonPath("$.message").value("请求参数无效"));
     }
 
     @Test
     void shouldReturnStableWorkflowErrors() throws Exception {
         QueryService notReady = mock(QueryService.class);
-        when(notReady.execute(any())).thenThrow(new QueryNotReadyException());
+        when(notReady.execute(any())).thenThrow(new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY));
         mockMvc(notReady).perform(validRequest()).andExpect(status().isConflict());
 
         QueryService rejected = mock(QueryService.class);
-        when(rejected.execute(any())).thenThrow(new QueryRejectedException());
+        when(rejected.execute(any())).thenThrow(new AppException(ResponseCode.QUERY_REJECTED));
         mockMvc(rejected).perform(validRequest()).andExpect(status().isUnprocessableEntity());
 
         QueryService unavailable = mock(QueryService.class);
-        when(unavailable.execute(any())).thenThrow(new AiModelUnavailableException());
+        when(unavailable.execute(any())).thenThrow(new AppException(ResponseCode.AI_MODEL_UNAVAILABLE));
         mockMvc(unavailable).perform(validRequest()).andExpect(status().isServiceUnavailable());
     }
 

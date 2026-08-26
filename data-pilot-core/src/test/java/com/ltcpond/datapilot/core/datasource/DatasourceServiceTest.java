@@ -1,7 +1,8 @@
 package com.ltcpond.datapilot.core.datasource;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.datasource.connection.ConnectionTestResult;
-import com.ltcpond.datapilot.datasource.connection.ExternalDatasourceException;
 import com.ltcpond.datapilot.datasource.connection.MysqlConnectionTester;
 import com.ltcpond.datapilot.datasource.crypto.CredentialCipher;
 import com.ltcpond.datapilot.datasource.entity.DatasourceEntity;
@@ -46,11 +47,14 @@ class DatasourceServiceTest {
     @Test
     void shouldNotSaveWhenConnectionTestFails() {
         when(store.findByName("demo")).thenReturn(Optional.empty());
-        when(connectionTester.test(any())).thenThrow(new ExternalDatasourceException());
+        when(connectionTester.test(any())).thenThrow(
+                new AppException(ResponseCode.EXTERNAL_DATASOURCE_OPERATION_FAILED));
 
         assertThatThrownBy(() -> service.create(command()))
-                .isInstanceOf(DatasourceConnectionException.class)
-                .hasMessage("Datasource is unreachable");
+                .isInstanceOfSatisfying(AppException.class, exception -> {
+                    assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.DATASOURCE_UNREACHABLE);
+                    assertThat(exception).hasMessage("数据源无法连接");
+                });
         verify(store, never()).insert(any());
         verify(credentialCipher, never()).encrypt(any());
     }
@@ -80,8 +84,11 @@ class DatasourceServiceTest {
 
         assertThatThrownBy(() -> service.testConnection(new ConnectionTestCommand(
                 "jdbc:postgresql://localhost/demo", "reader", "secret")))
-                .isInstanceOf(InvalidDatasourceException.class)
-                .hasMessage("Invalid datasource configuration");
+                .isInstanceOfSatisfying(AppException.class, exception -> {
+                    assertThat(exception.getResponseCode()).isEqualTo(
+                            ResponseCode.INVALID_DATASOURCE_CONFIGURATION);
+                    assertThat(exception).hasMessage("数据源配置无效");
+                });
     }
 
     @Test
@@ -93,10 +100,12 @@ class DatasourceServiceTest {
         entity.setEncryptedPassword("v1:ciphertext");
         when(store.findById(9L)).thenReturn(Optional.of(entity));
         when(credentialCipher.decrypt("v1:ciphertext")).thenReturn("test-secret");
-        when(metadataReader.read(any())).thenThrow(new ExternalDatasourceException());
+        when(metadataReader.read(any())).thenThrow(
+                new AppException(ResponseCode.EXTERNAL_DATASOURCE_OPERATION_FAILED));
 
         assertThatThrownBy(() -> service.synchronize(9L))
-                .isInstanceOf(DatasourceConnectionException.class);
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.DATASOURCE_UNREACHABLE));
         verify(store, never()).synchronize(eq(9L), any());
         verify(store).markError(9L);
     }

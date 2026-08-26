@@ -1,7 +1,8 @@
 package com.ltcpond.datapilot.api.async;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.CreateQueryCommand;
-import com.ltcpond.datapilot.core.query.QueryCancelledException;
 import com.ltcpond.datapilot.core.query.QueryResultView;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.core.query.QueryStatus;
@@ -29,7 +30,7 @@ public class AsyncQueryCoordinator {
             taskExecutor.execute(() -> run(task.id()));
         } catch (TaskRejectedException exception) {
             queryService.discardCreatedTask(task.id());
-            throw new AsyncQueryQueueFullException();
+            throw new AppException(ResponseCode.ASYNC_QUERY_QUEUE_FULL);
         }
         return new AsyncQueryAcceptedView(
                 task.id(), task.status(),
@@ -40,11 +41,11 @@ public class AsyncQueryCoordinator {
     public AsyncQueryResultView result(long queryId) {
         QueryTaskView task = queryService.get(queryId);
         if (!"ASYNC".equals(task.executionMode())) {
-            throw new QueryResultNotAvailableException();
+            throw new AppException(ResponseCode.QUERY_RESULT_NOT_AVAILABLE);
         }
         if (QueryStatus.SUCCEEDED.name().equals(task.status())) {
             QueryResultView result = resultStore.find(queryId)
-                    .orElseThrow(QueryResultExpiredException::new);
+                    .orElseThrow(() -> new AppException(ResponseCode.QUERY_RESULT_EXPIRED));
             return view(task, result);
         }
         return view(task, null);
@@ -57,10 +58,8 @@ public class AsyncQueryCoordinator {
     private void run(long queryId) {
         try {
             queryService.executeTask(queryId, resultStore::store);
-        } catch (QueryCancelledException ignored) {
-            // CANCELLED 已由核心状态机持久化并发布。
         } catch (RuntimeException ignored) {
-            // 核心服务只记录脱敏错误码；后台线程不得泄露异常详情。
+            // 核心服务已持久化取消状态或脱敏错误码；后台线程不得泄露异常详情。
         }
     }
 

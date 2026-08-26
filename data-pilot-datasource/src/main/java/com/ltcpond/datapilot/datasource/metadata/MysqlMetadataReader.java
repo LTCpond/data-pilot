@@ -1,7 +1,8 @@
 package com.ltcpond.datapilot.datasource.metadata;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
-import com.ltcpond.datapilot.datasource.connection.ExternalDatasourceException;
 import com.ltcpond.datapilot.datasource.connection.TemporaryMysqlDataSourceFactory;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,7 @@ public class MysqlMetadataReader {
              Connection connection = dataSource.getConnection()) {
             return read(connection);
         } catch (Exception exception) {
-            throw new ExternalDatasourceException();
+            throw new AppException(ResponseCode.EXTERNAL_DATASOURCE_OPERATION_FAILED);
         }
     }
 

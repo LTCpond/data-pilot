@@ -1,12 +1,10 @@
 package com.ltcpond.datapilot.api;
 
-import com.ltcpond.datapilot.core.datasource.DatasourceConnectionException;
-import com.ltcpond.datapilot.core.datasource.DatasourceNotFoundException;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.datasource.DatasourceService;
 import com.ltcpond.datapilot.core.datasource.DatasourceView;
-import com.ltcpond.datapilot.core.datasource.DuplicateDatasourceException;
 import com.ltcpond.datapilot.core.rag.SchemaIndexService;
-import com.ltcpond.datapilot.core.rag.RagIndexException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -59,13 +57,13 @@ class DatasourceControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"jdbcUrl\":\"\",\"username\":\"\",\"password\":\"\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("invalid request"));
+                .andExpect(jsonPath("$.message").value("请求参数无效"));
     }
 
     @Test
     void shouldReturnSanitized502ForConnectionFailure() throws Exception {
         DatasourceService service = mock(DatasourceService.class);
-        when(service.testConnection(any())).thenThrow(new DatasourceConnectionException());
+        when(service.testConnection(any())).thenThrow(new AppException(ResponseCode.DATASOURCE_UNREACHABLE));
         MockMvc mockMvc = mockMvc(service);
 
         mockMvc.perform(post("/api/datasources/test-connection")
@@ -74,7 +72,7 @@ class DatasourceControllerTest {
                                 {"jdbcUrl":"jdbc:mysql://secret-host/db","username":"reader","password":"secret"}
                                 """))
                 .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.message").value("datasource is unreachable"))
+                .andExpect(jsonPath("$.message").value("数据源无法连接"))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("secret-host"))))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
@@ -84,17 +82,17 @@ class DatasourceControllerTest {
     @Test
     void shouldReturn404ForMissingDatasource() throws Exception {
         DatasourceService service = mock(DatasourceService.class);
-        when(service.get(99L)).thenThrow(new DatasourceNotFoundException());
+        when(service.get(99L)).thenThrow(new AppException(ResponseCode.DATASOURCE_NOT_FOUND));
 
         mockMvc(service).perform(get("/api/datasources/99"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.message").value("datasource not found"));
+                .andExpect(jsonPath("$.message").value("数据源不存在"));
     }
 
     @Test
     void shouldReturn409ForDuplicateName() throws Exception {
         DatasourceService service = mock(DatasourceService.class);
-        when(service.create(any())).thenThrow(new DuplicateDatasourceException());
+        when(service.create(any())).thenThrow(new AppException(ResponseCode.DUPLICATE_DATASOURCE_NAME));
 
         mockMvc(service).perform(post("/api/datasources")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -107,14 +105,14 @@ class DatasourceControllerTest {
                                 }
                                 """))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("datasource name already exists"));
+                .andExpect(jsonPath("$.message").value("数据源名称已存在"));
     }
 
     @Test
     void shouldReturnSanitized502WhenRagIndexFails() throws Exception {
         DatasourceService service = mock(DatasourceService.class);
         SchemaIndexService indexService = mock(SchemaIndexService.class);
-        when(indexService.rebuild(1L)).thenThrow(new RagIndexException());
+        when(indexService.rebuild(1L)).thenThrow(new AppException(ResponseCode.SCHEMA_VECTOR_INDEX_FAILED));
         LocalValidatorFactoryBean validator = new LocalValidatorFactoryBean();
         validator.afterPropertiesSet();
         MockMvc mockMvc = standaloneSetup(new DatasourceController(service, indexService))
@@ -124,7 +122,8 @@ class DatasourceControllerTest {
 
         mockMvc.perform(post("/api/datasources/1/rag-index"))
                 .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.message").value("schema vector indexing failed"));
+                .andExpect(jsonPath("$.code").value(50203))
+                .andExpect(jsonPath("$.message").value("Schema 向量索引失败"));
     }
 
     private MockMvc mockMvc(DatasourceService service) {

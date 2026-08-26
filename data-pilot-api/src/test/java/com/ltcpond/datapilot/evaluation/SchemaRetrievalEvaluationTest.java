@@ -90,7 +90,7 @@ class SchemaRetrievalEvaluationTest {
     private List<RetrievalCase> loadCases() throws Exception {
         InputStream stream = getClass().getResourceAsStream("/evaluation/text-to-sql-cases.tsv");
         if (stream == null) {
-            throw new IllegalStateException("Evaluation dataset is missing");
+            throw new IllegalStateException("缺少 Text-to-SQL 评测数据集");
         }
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(stream, StandardCharsets.UTF_8))) {

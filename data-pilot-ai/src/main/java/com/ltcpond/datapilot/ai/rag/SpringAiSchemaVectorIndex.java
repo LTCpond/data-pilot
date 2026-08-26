@@ -91,7 +91,7 @@ public class SpringAiSchemaVectorIndex implements SchemaVectorIndex {
 
     private void requireAvailable() {
         if (!available()) {
-            throw new IllegalStateException("Schema vector index is unavailable");
+            throw new IllegalStateException("Schema 向量索引不可用");
         }
     }
 }

@@ -41,7 +41,7 @@ public class QueryStateMachine {
     public void transition(QueryTaskEntity task, QueryStatus target) {
         QueryStatus current = QueryStatus.valueOf(task.getStatus());
         if (!TRANSITIONS.getOrDefault(current, Set.of()).contains(target)) {
-            throw new IllegalStateException("Invalid query state transition");
+            throw new IllegalStateException("查询状态转换无效");
         }
         LocalDateTime now = LocalDateTime.now();
         task.setStatus(target.name());

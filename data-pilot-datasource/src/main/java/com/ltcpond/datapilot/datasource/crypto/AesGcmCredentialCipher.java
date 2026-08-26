@@ -28,10 +28,10 @@ public class AesGcmCredentialCipher implements CredentialCipher {
         try {
             decoded = Base64.getDecoder().decode(properties.getKey());
         } catch (RuntimeException exception) {
-            throw new IllegalArgumentException("DATA_PILOT_ENCRYPTION_KEY must be valid Base64", exception);
+            throw new IllegalArgumentException("DATA_PILOT_ENCRYPTION_KEY 必须是有效的 Base64 字符串", exception);
         }
         if (decoded.length != 32) {
-            throw new IllegalArgumentException("DATA_PILOT_ENCRYPTION_KEY must contain 32 bytes");
+            throw new IllegalArgumentException("DATA_PILOT_ENCRYPTION_KEY 解码后必须为 32 字节");
         }
         this.key = new SecretKeySpec(decoded, "AES");
     }
@@ -49,19 +49,19 @@ public class AesGcmCredentialCipher implements CredentialCipher {
             System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
             return PREFIX + Base64.getEncoder().encodeToString(payload);
         } catch (GeneralSecurityException exception) {
-            throw new IllegalStateException("Credential encryption failed", exception);
+            throw new IllegalStateException("凭据加密失败", exception);
         }
     }
 
     @Override
     public String decrypt(String ciphertext) {
         if (ciphertext == null || !ciphertext.startsWith(PREFIX)) {
-            throw new IllegalArgumentException("Unsupported encrypted credential format");
+            throw new IllegalArgumentException("不支持的加密凭据格式");
         }
         try {
             byte[] payload = Base64.getDecoder().decode(ciphertext.substring(PREFIX.length()));
             if (payload.length <= IV_LENGTH) {
-                throw new IllegalArgumentException("Invalid encrypted credential");
+            throw new IllegalArgumentException("加密凭据无效");
             }
             byte[] iv = Arrays.copyOfRange(payload, 0, IV_LENGTH);
             byte[] encrypted = Arrays.copyOfRange(payload, IV_LENGTH, payload.length);
@@ -69,7 +69,7 @@ public class AesGcmCredentialCipher implements CredentialCipher {
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_LENGTH_BITS, iv));
             return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
         } catch (GeneralSecurityException | IllegalArgumentException exception) {
-            throw new IllegalStateException("Credential decryption failed", exception);
+            throw new IllegalStateException("凭据解密失败", exception);
         }
     }
 }

@@ -4,7 +4,8 @@ import com.ltcpond.datapilot.api.async.AsyncQueryAcceptedView;
 import com.ltcpond.datapilot.api.async.AsyncQueryCoordinator;
 import com.ltcpond.datapilot.api.async.AsyncQueryResultView;
 import com.ltcpond.datapilot.api.async.QuerySseService;
-import com.ltcpond.datapilot.api.async.QueryResultExpiredException;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
@@ -54,11 +55,12 @@ class AsyncQueryControllerTest {
     @Test
     void shouldReturnGoneAfterRedisResultExpires() throws Exception {
         AsyncQueryCoordinator coordinator = mock(AsyncQueryCoordinator.class);
-        when(coordinator.result(11L)).thenThrow(new QueryResultExpiredException());
+        when(coordinator.result(11L)).thenThrow(new AppException(ResponseCode.QUERY_RESULT_EXPIRED));
 
         mockMvc(coordinator).perform(get("/api/queries/11/result"))
                 .andExpect(status().isGone())
-                .andExpect(jsonPath("$.message").value("query result expired"));
+                .andExpect(jsonPath("$.code").value(41001))
+                .andExpect(jsonPath("$.message").value("查询结果已过期"));
     }
 
     private org.springframework.test.web.servlet.MockMvc mockMvc(AsyncQueryCoordinator coordinator) {

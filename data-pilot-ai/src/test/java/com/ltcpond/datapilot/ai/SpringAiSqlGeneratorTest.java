@@ -1,5 +1,7 @@
 package com.ltcpond.datapilot.ai;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -76,9 +78,10 @@ class SpringAiSqlGeneratorTest {
                 enabledProperties(), modelReturning(response("not-json-api-key-secret", "stop")));
 
         assertThatThrownBy(() -> generator.generate(new SqlGenerationRequest("问题", "Schema")))
-                .isInstanceOfSatisfying(AiGenerationException.class, exception -> {
-                    assertThat(exception.getErrorCode()).isEqualTo("AI_RESPONSE_INVALID_JSON");
-                    assertThat(exception.getMessage()).isEqualTo("AI SQL generation failed");
+                .isInstanceOfSatisfying(AppException.class, exception -> {
+                    assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.AI_SQL_GENERATION_FAILED);
+                    assertThat(exception.getDetailCode()).isEqualTo("AI_RESPONSE_INVALID_JSON");
+                    assertThat(exception.getMessage()).isEqualTo("AI SQL 生成失败");
                     assertThat(exception.getMessage()).doesNotContain("not-json", "api-key-secret");
                 });
     }
@@ -92,8 +95,8 @@ class SpringAiSqlGeneratorTest {
         SpringAiSqlGenerator generator = new SpringAiSqlGenerator(enabledProperties(), chatModel);
 
         assertThatThrownBy(() -> generator.generate(new SqlGenerationRequest("问题", "Schema")))
-                .isInstanceOfSatisfying(AiGenerationException.class, exception -> {
-                    assertThat(exception.getErrorCode()).isEqualTo("AI_REQUEST_TIMEOUT");
+                .isInstanceOfSatisfying(AppException.class, exception -> {
+                    assertThat(exception.getDetailCode()).isEqualTo("AI_REQUEST_TIMEOUT");
                     assertThat(exception.getMessage()).doesNotContain("secret-key", "timed out");
                 });
     }
@@ -105,14 +108,16 @@ class SpringAiSqlGeneratorTest {
         SpringAiSqlGenerator generator = new SpringAiSqlGenerator(properties, mock(ChatModel.class));
 
         assertThatThrownBy(() -> generator.generate(new SqlGenerationRequest("问题", "Schema")))
-                .isInstanceOf(AiModelUnavailableException.class)
-                .hasMessage("AI model is unavailable");
+                .isInstanceOfSatisfying(AppException.class, exception -> {
+                    assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.AI_MODEL_UNAVAILABLE);
+                    assertThat(exception).hasMessage("AI 模型不可用");
+                });
     }
 
     private void assertErrorCode(SpringAiSqlGenerator generator, String expected) {
         assertThatThrownBy(() -> generator.generate(new SqlGenerationRequest("问题", "Schema")))
-                .isInstanceOfSatisfying(AiGenerationException.class,
-                        exception -> assertThat(exception.getErrorCode()).isEqualTo(expected));
+                .isInstanceOfSatisfying(AppException.class,
+                        exception -> assertThat(exception.getDetailCode()).isEqualTo(expected));
     }
 
     private ChatModel modelReturning(ChatResponse response) {

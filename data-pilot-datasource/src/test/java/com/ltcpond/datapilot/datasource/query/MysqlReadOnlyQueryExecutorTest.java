@@ -1,5 +1,7 @@
 package com.ltcpond.datapilot.datasource.query;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
 import com.ltcpond.datapilot.datasource.connection.TemporaryMysqlDataSourceFactory;
 import com.zaxxer.hikari.HikariDataSource;
@@ -75,8 +77,10 @@ class MysqlReadOnlyQueryExecutorTest {
         MysqlReadOnlyQueryExecutor executor = new MysqlReadOnlyQueryExecutor(factory);
 
         assertThatThrownBy(() -> executor.execute(connectionInfo(), "SELECT 1", 100))
-                .isInstanceOfSatisfying(QueryExecutionException.class, exception -> {
-                    assertThat(exception.getErrorCode()).isEqualTo("CONNECTION_FAILED");
+                .isInstanceOfSatisfying(AppException.class, exception -> {
+                    assertThat(exception.getResponseCode()).isEqualTo(
+                            ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED);
+                    assertThat(exception.getDetailCode()).isEqualTo("CONNECTION_FAILED");
                     assertThat(exception.getMessage())
                             .doesNotContain("secret-host")
                             .doesNotContain("secret-user");

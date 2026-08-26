@@ -256,7 +256,7 @@ public class DatasourceStore {
             Map<String, SchemaTableEntity> tables, String schemaName, String tableName) {
         SchemaTableEntity table = tables.get(tableKey(schemaName, tableName));
         if (table == null) {
-            throw new IllegalStateException("Foreign key references an unknown table");
+                throw new IllegalStateException("外键引用了未知的表");
         }
         return table;
     }
@@ -265,7 +265,7 @@ public class DatasourceStore {
             Map<String, SchemaColumnEntity> columns, long tableId, String columnName) {
         SchemaColumnEntity column = columns.get(columnKey(tableId, columnName));
         if (column == null) {
-            throw new IllegalStateException("Foreign key references an unknown column");
+                throw new IllegalStateException("外键引用了未知的字段");
         }
         return column;
     }

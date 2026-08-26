@@ -31,7 +31,7 @@ public class TemporaryMysqlDataSourceFactory {
 
     public void validateJdbcUrl(String jdbcUrl) {
         if (jdbcUrl == null || !jdbcUrl.toLowerCase(Locale.ROOT).startsWith(MYSQL_PREFIX)) {
-            throw new IllegalArgumentException("Only jdbc:mysql:// URLs are supported");
+            throw new IllegalArgumentException("仅支持 jdbc:mysql:// 格式的连接地址");
         }
     }
 

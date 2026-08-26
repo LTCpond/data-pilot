@@ -2,6 +2,8 @@ package com.ltcpond.datapilot.core.rag;
 
 import com.ltcpond.datapilot.ai.rag.RagProperties;
 import com.ltcpond.datapilot.ai.rag.SchemaVectorIndex;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.datasource.DatasourceSchemaView;
 import com.ltcpond.datapilot.core.datasource.DatasourceService;
 import com.ltcpond.datapilot.core.datasource.SchemaTableView;
@@ -65,7 +67,10 @@ class SchemaIndexServiceTest {
     void shouldKeepOldVersionWhenNewIndexFails() {
         doThrow(new IllegalStateException("ollama unavailable")).when(vectorIndex).index(any());
 
-        assertThatThrownBy(() -> service.rebuild(1L)).isInstanceOf(RagIndexException.class);
+        assertThatThrownBy(() -> service.rebuild(1L))
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode()).isEqualTo(
+                                ResponseCode.SCHEMA_VECTOR_INDEX_FAILED));
 
         verify(store).markRagError(1L, "RAG_INDEX_FAILED");
         verify(store, never()).markRagReady(eq(1L), anyString(), anyInt(), any());

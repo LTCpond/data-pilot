@@ -8,6 +8,8 @@ import com.ltcpond.datapilot.ai.SqlGenerationOutcome;
 import com.ltcpond.datapilot.ai.SqlGenerator;
 import com.ltcpond.datapilot.ai.rag.RagProperties;
 import com.ltcpond.datapilot.ai.rag.SchemaVectorIndex;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.datasource.DatasourceSchemaView;
 import com.ltcpond.datapilot.core.datasource.DatasourceService;
 import com.ltcpond.datapilot.core.datasource.SchemaColumnView;
@@ -17,7 +19,6 @@ import com.ltcpond.datapilot.datasource.entity.DatasourceEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryAttemptEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryTaskEntity;
 import com.ltcpond.datapilot.datasource.query.QueryExecutionResult;
-import com.ltcpond.datapilot.datasource.query.QueryExecutionException;
 import com.ltcpond.datapilot.datasource.query.ReadOnlyQueryExecutor;
 import com.ltcpond.datapilot.datasource.store.DatasourceStore;
 import com.ltcpond.datapilot.datasource.store.QueryTaskStore;
@@ -151,7 +152,8 @@ class QueryServiceTest {
                 SqlValidationResult.rejected(List.of("NON_SELECT_STATEMENT")));
 
         assertThatThrownBy(() -> service.execute(new CreateQueryCommand(1L, "删除所有订单", 100)))
-                .isInstanceOf(QueryRejectedException.class);
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_REJECTED));
 
         verify(sqlGenerator, times(2)).repair(any());
         verify(queryExecutor, never()).execute(any(), any(), any(Integer.class), anyLong());
@@ -166,7 +168,8 @@ class QueryServiceTest {
                 false, "问题要求修改数据", List.of(), "", "不允许写操作", new BigDecimal("0.99"))));
 
         assertThatThrownBy(() -> service.execute(new CreateQueryCommand(1L, "删除所有订单", null)))
-                .isInstanceOf(QueryRejectedException.class);
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_REJECTED));
         verify(sqlValidator, never()).validate(any());
         verify(queryExecutor, never()).execute(any(), any(), any(Integer.class), anyLong());
     }
@@ -177,10 +180,13 @@ class QueryServiceTest {
         when(sqlValidator.validate(any())).thenReturn(
                 SqlValidationResult.accepted("SELECT id FROM orders LIMIT 100"));
         when(queryExecutor.execute(any(), any(), any(Integer.class), anyLong()))
-                .thenThrow(new QueryExecutionException("CONNECTION_FAILED"));
+                .thenThrow(new AppException(
+                        ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED, "CONNECTION_FAILED"));
 
         assertThatThrownBy(() -> service.execute(new CreateQueryCommand(1L, "查询订单", null)))
-                .isInstanceOf(QueryFailedException.class);
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode()).isEqualTo(
+                                ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED));
 
         verify(sqlGenerator, never()).repair(any());
     }
@@ -204,7 +210,8 @@ class QueryServiceTest {
         assertThat(cancelled.status()).isEqualTo("CANCEL_REQUESTED");
         verify(queryExecutor).cancel(created.id());
         assertThatThrownBy(() -> service.executeTask(created.id(), QueryResultSink.none()))
-                .isInstanceOf(QueryCancelledException.class);
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_TASK_CANCELLED));
         assertThat(storedTask.get().getStatus()).isEqualTo("CANCELLED");
         verify(sqlGenerator, never()).generate(any());
     }

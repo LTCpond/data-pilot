@@ -1,5 +1,7 @@
 package com.ltcpond.datapilot.ai;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
@@ -105,33 +107,34 @@ final class SpringAiSqlGenerator implements SqlGenerator {
                     .chatResponse();
             if (response == null || response.getResult() == null
                     || response.getResult().getOutput() == null) {
-                throw new AiGenerationException("AI_EMPTY_RESPONSE");
+                throw new AppException(ResponseCode.AI_SQL_GENERATION_FAILED, "AI_EMPTY_RESPONSE");
             }
             String finishReason = response.getResult().getMetadata() == null
                     ? null
                     : response.getResult().getMetadata().getFinishReason();
             if (isTruncated(finishReason)) {
-                throw new AiGenerationException("AI_RESPONSE_TRUNCATED");
+                throw new AppException(ResponseCode.AI_SQL_GENERATION_FAILED, "AI_RESPONSE_TRUNCATED");
             }
             String content = response.getResult().getOutput().getText();
             if (content == null || content.isBlank()) {
-                throw new AiGenerationException("AI_EMPTY_RESPONSE");
+                throw new AppException(ResponseCode.AI_SQL_GENERATION_FAILED, "AI_EMPTY_RESPONSE");
             }
             SqlGenerationResult result;
             try {
                 result = outputConverter.convert(content);
             } catch (RuntimeException exception) {
-                throw new AiGenerationException("AI_RESPONSE_INVALID_JSON", exception);
+                throw new AppException(
+                        ResponseCode.AI_SQL_GENERATION_FAILED, "AI_RESPONSE_INVALID_JSON", exception);
             }
             if (result == null) {
-                throw new AiGenerationException("AI_RESPONSE_INVALID_JSON");
+                throw new AppException(ResponseCode.AI_SQL_GENERATION_FAILED, "AI_RESPONSE_INVALID_JSON");
             }
             return new SqlGenerationOutcome(result, metrics(response, elapsedMillis(startedAt)));
-        } catch (AiGenerationException exception) {
+        } catch (AppException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             String errorCode = hasTimeoutCause(exception) ? "AI_REQUEST_TIMEOUT" : "AI_GENERATION_FAILED";
-            throw new AiGenerationException(errorCode, exception);
+            throw new AppException(ResponseCode.AI_SQL_GENERATION_FAILED, errorCode, exception);
         }
     }
 
@@ -184,7 +187,7 @@ final class SpringAiSqlGenerator implements SqlGenerator {
 
     private void ensureAvailable() {
         if (!properties.isEnabled() || chatClient == null) {
-            throw new AiModelUnavailableException();
+            throw new AppException(ResponseCode.AI_MODEL_UNAVAILABLE);
         }
     }
 }

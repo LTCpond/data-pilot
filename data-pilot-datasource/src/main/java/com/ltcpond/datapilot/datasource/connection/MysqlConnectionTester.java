@@ -1,5 +1,7 @@
 package com.ltcpond.datapilot.datasource.connection;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -23,18 +25,18 @@ public class MysqlConnectionTester {
             statement.setQueryTimeout(2);
             try (ResultSet resultSet = statement.executeQuery("SELECT 1")) {
                 if (!resultSet.next() || resultSet.getInt(1) != 1) {
-                    throw new ExternalDatasourceException();
+                    throw new AppException(ResponseCode.EXTERNAL_DATASOURCE_OPERATION_FAILED);
                 }
             }
             DatabaseMetaData metadata = connection.getMetaData();
             return new ConnectionTestResult(
                     metadata.getDatabaseProductName(), metadata.getDatabaseProductVersion());
-        } catch (ExternalDatasourceException exception) {
+        } catch (AppException exception) {
             throw exception;
         } catch (IllegalArgumentException exception) {
             throw exception;
         } catch (Exception exception) {
-            throw new ExternalDatasourceException();
+            throw new AppException(ResponseCode.EXTERNAL_DATASOURCE_OPERATION_FAILED);
         }
     }
 }

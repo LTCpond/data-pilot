@@ -1,5 +1,7 @@
 package com.ltcpond.datapilot.datasource.query;
 
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
 import com.ltcpond.datapilot.datasource.connection.TemporaryMysqlDataSourceFactory;
 import com.zaxxer.hikari.HikariDataSource;
@@ -48,10 +50,11 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
             explain(connection, sql, taskId);
             return query(connection, sql, maxRows, taskId);
         } catch (SQLException | RuntimeException exception) {
-            if (exception instanceof QueryExecutionException queryException) {
-                throw queryException;
+            if (exception instanceof AppException appException) {
+                throw appException;
             }
-            throw new QueryExecutionException(classify(exception));
+            throw new AppException(
+                    ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED, classify(exception), exception);
         }
     }
 

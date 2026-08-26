@@ -29,7 +29,7 @@ class AesGcmCredentialCipherTest {
 
         assertThatThrownBy(() -> cipherWithByte((byte) 2).decrypt(ciphertext))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Credential decryption failed");
+                .hasMessage("凭据解密失败");
     }
 
     @Test

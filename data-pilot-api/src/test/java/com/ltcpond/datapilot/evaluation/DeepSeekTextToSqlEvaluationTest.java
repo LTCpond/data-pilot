@@ -2,7 +2,8 @@ package com.ltcpond.datapilot.evaluation;
 
 import com.ltcpond.datapilot.DataPilotApplication;
 import com.ltcpond.datapilot.core.query.CreateQueryCommand;
-import com.ltcpond.datapilot.core.query.QueryRejectedException;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.QueryResultView;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
@@ -107,10 +108,14 @@ class DeepSeekTextToSqlEvaluationTest {
                         evaluationCase.comparison().name(), generated.rows(), expected.rows());
                 detail = passed ? "matched" : "result mismatch";
             }
-        } catch (QueryRejectedException exception) {
+        } catch (AppException exception) {
             taskId = newestTaskId(datasourceId, evaluationCase.question());
-            passed = evaluationCase.comparison() == Comparison.REJECTED;
-            detail = passed ? "safely rejected" : "unexpected rejection";
+            if (exception.getResponseCode() == ResponseCode.QUERY_REJECTED) {
+                passed = evaluationCase.comparison() == Comparison.REJECTED;
+                detail = passed ? "safely rejected" : "unexpected rejection";
+            } else {
+                detail = "workflow error: " + exception.getResponseCode().name();
+            }
         } catch (RuntimeException exception) {
             taskId = newestTaskId(datasourceId, evaluationCase.question());
             detail = "workflow error: " + exception.getClass().getSimpleName();
@@ -197,7 +202,7 @@ class DeepSeekTextToSqlEvaluationTest {
     private List<EvaluationCase> loadCases() throws IOException {
         InputStream stream = getClass().getResourceAsStream("/evaluation/text-to-sql-cases.tsv");
         if (stream == null) {
-            throw new IllegalStateException("Evaluation dataset is missing");
+            throw new IllegalStateException("缺少 Text-to-SQL 评测数据集");
         }
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(stream, StandardCharsets.UTF_8))) {

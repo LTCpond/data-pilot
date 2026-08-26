@@ -1,6 +1,7 @@
 package com.ltcpond.datapilot.api.async;
 
-import com.ltcpond.datapilot.core.query.QueryResultDeliveryException;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.QueryResultView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -25,10 +26,10 @@ public class RedisQueryResultStore {
     public void requireAvailable() {
         try (RedisConnection connection = redisTemplate.getConnectionFactory().getConnection()) {
             if (connection.ping() == null) {
-                throw new AsyncQueryUnavailableException();
+                throw new AppException(ResponseCode.ASYNC_QUERY_SERVICE_UNAVAILABLE);
             }
         } catch (RuntimeException exception) {
-            throw new AsyncQueryUnavailableException();
+            throw new AppException(ResponseCode.ASYNC_QUERY_SERVICE_UNAVAILABLE);
         }
     }
 
@@ -40,7 +41,7 @@ public class RedisQueryResultStore {
                     properties.getResultTtl());
             return LocalDateTime.now().plus(properties.getResultTtl());
         } catch (RuntimeException exception) {
-            throw new QueryResultDeliveryException();
+            throw new AppException(ResponseCode.QUERY_RESULT_DELIVERY_FAILED);
         }
     }
 
@@ -51,7 +52,7 @@ public class RedisQueryResultStore {
                     ? Optional.empty()
                     : Optional.of(objectMapper.readValue(json, QueryResultView.class));
         } catch (RuntimeException exception) {
-            throw new AsyncQueryUnavailableException();
+            throw new AppException(ResponseCode.ASYNC_QUERY_SERVICE_UNAVAILABLE);
         }
     }
 
