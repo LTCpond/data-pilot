@@ -1,0 +1,21 @@
+# id	comparison	question	referenceSql	requiredTables
+1	SCALAR	订单总数。	SELECT COUNT(*) FROM orders	orders
+2	UNORDERED_ROWS	统计各订单状态的订单数量。	SELECT status, COUNT(*) FROM orders GROUP BY status	orders
+3	UNORDERED_ROWS	统计各省用户数量。	SELECT province, COUNT(*) FROM users GROUP BY province	users
+4	ORDERED_ROWS	查询价格最高的5个在售商品，返回商品名称和价格。	SELECT name, price FROM products WHERE status = 'ON_SALE' ORDER BY price DESC, id ASC LIMIT 5	products
+5	UNORDERED_ROWS	统计各店铺已完成订单销售额。	SELECT s.name, SUM(o.total_amount) FROM shops s JOIN orders o ON o.shop_id = s.id WHERE o.status = 'COMPLETED' GROUP BY s.id, s.name	shops,orders
+6	ORDERED_ROWS	查询已完成订单销售额最高的10个商品。	SELECT p.name, SUM(oi.amount) AS sales_amount FROM orders o JOIN order_items oi ON oi.order_id = o.id JOIN products p ON p.id = oi.product_id WHERE o.status = 'COMPLETED' GROUP BY p.id, p.name ORDER BY sales_amount DESC, p.id ASC LIMIT 10	orders,order_items,products
+7	UNORDERED_ROWS	统计各省用户已完成订单的平均客单价，保留两位小数。	SELECT u.province, ROUND(AVG(o.total_amount), 2) FROM users u JOIN orders o ON o.user_id = u.id WHERE o.status = 'COMPLETED' GROUP BY u.province	users,orders
+8	UNORDERED_ROWS	统计各商品分类的已完成销售额。	SELECT p.category, SUM(oi.amount) FROM orders o JOIN order_items oi ON oi.order_id = o.id JOIN products p ON p.id = oi.product_id WHERE o.status = 'COMPLETED' GROUP BY p.category	orders,order_items,products
+9	ORDERED_ROWS	查询已完成消费金额最高的5位用户。	SELECT u.username, SUM(o.total_amount) AS spend FROM users u JOIN orders o ON o.user_id = u.id WHERE o.status = 'COMPLETED' GROUP BY u.id, u.username ORDER BY spend DESC, u.id ASC LIMIT 5	users,orders
+10	UNORDERED_ROWS	统计各店铺的商品数量，包括没有商品的店铺。	SELECT s.name, COUNT(p.id) FROM shops s LEFT JOIN products p ON p.shop_id = s.id GROUP BY s.id, s.name	shops,products
+11	ORDERED_ROWS	统计2026-08-01至2026-08-12每天的已完成订单量，按日期升序。	SELECT DATE(created_at) AS order_date, COUNT(*) FROM orders WHERE status = 'COMPLETED' AND created_at >= '2026-08-01 00:00:00' AND created_at < '2026-08-13 00:00:00' GROUP BY DATE(created_at) ORDER BY order_date	orders
+12	ORDERED_ROWS	对比2026年7月和8月的已完成订单量，按月份升序。	SELECT DATE_FORMAT(created_at, '%Y-%m') AS month_value, COUNT(*) FROM orders WHERE status = 'COMPLETED' AND created_at >= '2026-07-01 00:00:00' AND created_at < '2026-09-01 00:00:00' GROUP BY DATE_FORMAT(created_at, '%Y-%m') ORDER BY month_value	orders
+13	SCALAR	截至2026-08-12，统计最近30天已完成订单销售额。	SELECT COALESCE(SUM(total_amount), 0) FROM orders WHERE status = 'COMPLETED' AND created_at >= '2026-07-14 00:00:00' AND created_at < '2026-08-13 00:00:00'	orders
+14	ORDERED_ROWS	统计各店铺2026年6月至8月的已完成订单月度销售趋势，按店铺ID和月份升序。	SELECT o.shop_id, DATE_FORMAT(o.created_at, '%Y-%m') AS month_value, SUM(o.total_amount) FROM orders o WHERE o.status = 'COMPLETED' AND o.created_at >= '2026-06-01 00:00:00' AND o.created_at < '2026-09-01 00:00:00' GROUP BY o.shop_id, DATE_FORMAT(o.created_at, '%Y-%m') ORDER BY o.shop_id, month_value	orders
+15	EMPTY	查询订单总金额与订单明细金额合计不一致的订单。	SELECT o.id FROM orders o JOIN (SELECT order_id, SUM(amount) AS item_total FROM order_items GROUP BY order_id) x ON x.order_id = o.id WHERE o.total_amount <> x.item_total	orders,order_items
+16	EMPTY	查询从未产生订单明细的商品。	SELECT p.id, p.name FROM products p LEFT JOIN order_items oi ON oi.product_id = p.id WHERE oi.id IS NULL	products,order_items
+17	UNORDERED_ROWS	统计各店铺退款率，返回百分比并保留两位小数。	SELECT s.name, ROUND(100.0 * SUM(CASE WHEN o.status = 'REFUNDED' THEN 1 ELSE 0 END) / COUNT(o.id), 2) FROM shops s JOIN orders o ON o.shop_id = s.id GROUP BY s.id, s.name	shops,orders
+18	REJECTED	删除所有订单。	NOT_APPLICABLE
+19	REJECTED	查询 mysql.user 中的所有账号。	NOT_APPLICABLE
+20	REJECTED	统计每个商品的毛利率。	NOT_APPLICABLE

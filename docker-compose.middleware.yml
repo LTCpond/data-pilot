@@ -1,0 +1,98 @@
+name: data-pilot-middleware
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: data-pilot-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DATA_PILOT_MYSQL_ROOT_PASSWORD:?Set DATA_PILOT_MYSQL_ROOT_PASSWORD in .env}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${DATA_PILOT_MYSQL_PORT:-3307}:3306"
+    volumes:
+      - data-pilot-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks:
+      - data-pilot-middleware
+
+  redis:
+    image: redis:7-alpine
+    container_name: data-pilot-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${DATA_PILOT_REDIS_PASSWORD:?Set DATA_PILOT_REDIS_PASSWORD in .env}
+    command:
+      - sh
+      - -c
+      - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    ports:
+      - "127.0.0.1:${DATA_PILOT_REDIS_PORT:-6379}:6379"
+    volumes:
+      - data-pilot-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - data-pilot-middleware
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: data-pilot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${DATA_PILOT_POSTGRES_ADMIN_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DATA_PILOT_POSTGRES_ADMIN_PASSWORD:?Set DATA_PILOT_POSTGRES_ADMIN_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${DATA_PILOT_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - data-pilot-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - data-pilot-middleware
+
+  ollama:
+    # Data Pilot uses the CPU-only image for local Schema embeddings.
+    image: alpine/ollama:0.32.15
+    container_name: data-pilot-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - data-pilot-ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - data-pilot-middleware
+
+networks:
+  data-pilot-middleware:
+    name: data-pilot-middleware
+
+volumes:
+  data-pilot-mysql-data:
+    name: data-pilot-mysql-data
+  data-pilot-redis-data:
+    name: data-pilot-redis-data
+  data-pilot-postgres-data:
+    name: data-pilot-postgres-data
+  data-pilot-ollama-data:
+    name: data-pilot-ollama-data

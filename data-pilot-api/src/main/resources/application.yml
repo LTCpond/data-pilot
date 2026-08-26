@@ -1,0 +1,97 @@
+spring:
+  application:
+    name: data-pilot
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: jdbc:mysql://${DATA_PILOT_MYSQL_HOST:127.0.0.1}:${DATA_PILOT_MYSQL_PORT:3307}/data_pilot?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DATA_PILOT_MANAGEMENT_DB_USERNAME}
+    password: ${DATA_PILOT_MANAGEMENT_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${DATA_PILOT_REDIS_HOST:127.0.0.1}
+      port: ${DATA_PILOT_REDIS_PORT:6379}
+      password: ${DATA_PILOT_REDIS_PASSWORD}
+      database: 1
+      connect-timeout: 2s
+      timeout: 2s
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+  ai:
+    model:
+      chat: ${DATA_PILOT_AI_PROVIDER:none}
+      embedding: ${DATA_PILOT_EMBEDDING_PROVIDER:none}
+    openai:
+      base-url: ${DATA_PILOT_AI_BASE_URL:https://api.openai.com}
+      api-key: ${DATA_PILOT_AI_API_KEY:}
+      chat:
+        options:
+          model: ${DATA_PILOT_AI_MODEL:gpt-4.1-mini}
+          temperature: 0.1
+    retry:
+      max-attempts: 2
+    ollama:
+      base-url: ${DATA_PILOT_OLLAMA_BASE_URL:http://127.0.0.1:11434}
+      init:
+        pull-model-strategy: never
+      embedding:
+        options:
+          model: ${DATA_PILOT_OLLAMA_EMBEDDING_MODEL:bge-m3}
+
+server:
+  port: 8080
+
+data-pilot:
+  async-query:
+    core-pool-size: ${DATA_PILOT_ASYNC_CORE_POOL_SIZE:2}
+    max-pool-size: ${DATA_PILOT_ASYNC_MAX_POOL_SIZE:4}
+    queue-capacity: ${DATA_PILOT_ASYNC_QUEUE_CAPACITY:50}
+    result-ttl: ${DATA_PILOT_ASYNC_RESULT_TTL:15m}
+    sse-timeout: ${DATA_PILOT_ASYNC_SSE_TIMEOUT:5m}
+  ai:
+    enabled: ${DATA_PILOT_AI_ENABLED:false}
+    model: ${DATA_PILOT_AI_MODEL:gpt-4.1-mini}
+    maximum-repair-attempts: 2
+    default-max-rows: 100
+    absolute-max-rows: 200
+  rag:
+    enabled: ${DATA_PILOT_RAG_ENABLED:true}
+    mode: ${DATA_PILOT_RAG_MODE:AUTO}
+    full-schema-threshold: 10
+    top-k: 6
+    max-prompt-tables: 12
+    dimensions: 1024
+    postgres:
+      jdbc-url: jdbc:postgresql://${DATA_PILOT_POSTGRES_HOST:127.0.0.1}:${DATA_PILOT_POSTGRES_PORT:5432}/${DATA_PILOT_VECTOR_DB_NAME:data_pilot_vector}
+      username: ${DATA_PILOT_VECTOR_DB_USERNAME:data_pilot_vector_app}
+      password: ${DATA_PILOT_VECTOR_DB_PASSWORD:}
+      maximum-pool-size: 4
+      connection-timeout: 3000
+  encryption:
+    key: ${DATA_PILOT_ENCRYPTION_KEY}
+  business-datasource:
+    jdbc-url: jdbc:mysql://${DATA_PILOT_MYSQL_HOST:127.0.0.1}:${DATA_PILOT_MYSQL_PORT:3307}/ecommerce_demo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DATA_PILOT_BUSINESS_DB_USERNAME}
+    password: ${DATA_PILOT_BUSINESS_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    maximum-pool-size: 5
+    connection-timeout: 3000
+    validation-timeout: 2000
+    read-only: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
