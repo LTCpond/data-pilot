@@ -13,10 +13,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import javax.sql.DataSource;
 
 /**
- * 装配两个用途不同的数据源：管理库负责项目数据，业务库只允许查询演示数据。
+ * 装配管理库数据源，用于保存项目配置、任务和元数据。
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({BusinessDataSourceProperties.class, EncryptionProperties.class})
+@EnableConfigurationProperties(EncryptionProperties.class)
 public class DataSourceConfiguration {
 
     /** 绑定管理库连接配置，作为默认数据源属性。 */
@@ -47,30 +47,6 @@ public class DataSourceConfiguration {
     @Primary
     public JdbcTemplate managementJdbcTemplate(
             @Qualifier("managementDataSource") DataSource dataSource) {
-        return jdbcTemplate(dataSource);
-    }
-
-    /** 创建只读业务库连接池，供示例数据查询和健康探针使用。 */
-    @Bean(name = "businessDataSource", destroyMethod = "close")
-    public HikariDataSource businessDataSource(BusinessDataSourceProperties properties) {
-        HikariDataSource dataSource = new HikariDataSource();
-        dataSource.setPoolName("data-pilot-business-read-only");
-        dataSource.setJdbcUrl(properties.getJdbcUrl());
-        dataSource.setUsername(properties.getUsername());
-        dataSource.setPassword(properties.getPassword());
-        dataSource.setDriverClassName(properties.getDriverClassName());
-        dataSource.setMaximumPoolSize(properties.getMaximumPoolSize());
-        dataSource.setConnectionTimeout(properties.getConnectionTimeout());
-        dataSource.setValidationTimeout(properties.getValidationTimeout());
-        // 连接池只读标记是应用侧保护，数据库只读账号仍是最终安全边界。
-        dataSource.setReadOnly(properties.isReadOnly());
-        return dataSource;
-    }
-
-    /** 创建业务库 JdbcTemplate，并应用统一查询超时。 */
-    @Bean(name = "businessJdbcTemplate")
-    public JdbcTemplate businessJdbcTemplate(
-            @Qualifier("businessDataSource") DataSource dataSource) {
         return jdbcTemplate(dataSource);
     }
 

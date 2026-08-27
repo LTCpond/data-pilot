@@ -20,10 +20,10 @@ public class RedisHealthProbe implements HealthProbe {
         return "redis";
     }
 
-    /** 让 Redis 检查排在数据库检查之后。 */
+    /** 让 Redis 检查排在管理库检查之后。 */
     @Override
     public int order() {
-        return 3;
+        return 2;
     }
 
     /** 通过 PING/PONG 验证当前 Redis 逻辑库连接可用。 */

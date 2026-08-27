@@ -72,15 +72,6 @@ data-pilot:
       connection-timeout: 3000
   encryption:
     key: ${DATA_PILOT_ENCRYPTION_KEY}
-  business-datasource:
-    jdbc-url: jdbc:mysql://${DATA_PILOT_MYSQL_HOST:127.0.0.1}:${DATA_PILOT_MYSQL_PORT:3307}/ecommerce_demo?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${DATA_PILOT_BUSINESS_DB_USERNAME}
-    password: ${DATA_PILOT_BUSINESS_DB_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    maximum-pool-size: 5
-    connection-timeout: 3000
-    validation-timeout: 2000
-    read-only: true
 
 management:
   endpoints:
