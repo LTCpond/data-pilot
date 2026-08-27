@@ -30,7 +30,7 @@ public class AsyncQueryController {
     private final QuerySseService sseService;
 
     /** 提交异步问数任务，立即返回任务 ID、事件流地址和结果领取地址。 */
-    @PostMapping("/api/datasources/{datasourceId}/queries/async")
+    @PostMapping("/api/datasources/{datasourceId}/queries")
     public ResponseEntity<ApiResponse<AsyncQueryAcceptedView>> submit(
             @PathVariable long datasourceId,
             @Valid @RequestBody QueryRequest request) {

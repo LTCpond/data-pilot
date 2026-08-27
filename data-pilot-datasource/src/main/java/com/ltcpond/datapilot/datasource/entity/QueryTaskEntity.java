@@ -19,7 +19,6 @@ public class QueryTaskEntity {
     private Long id;
     private Long datasourceId;
     private String question;
-    private String executionMode;
     private Integer maxRows;
     private String status;
     private String questionAnalysis;

@@ -33,7 +33,7 @@ public class QuerySseService {
         emitter.onCompletion(() -> remove(queryId, emitter));
         emitter.onTimeout(() -> remove(queryId, emitter));
         emitter.onError(ignored -> remove(queryId, emitter));
-        send(queryId, emitter, event(task), "query-snapshot");
+        send(queryId, emitter, taskStatus(task), "query-snapshot");
         if (terminal(task.status())) {
             emitter.complete();
         }
@@ -61,7 +61,7 @@ public class QuerySseService {
         }
     }
 
-    private QueryStatusEvent event(QueryTaskView task) {
+    private QueryStatusEvent taskStatus(QueryTaskView task) {
         return new QueryStatusEvent(
                 task.id(), task.status(), task.errorCode(),
                 QueryStatus.SUCCEEDED.name().equals(task.status()), LocalDateTime.now());

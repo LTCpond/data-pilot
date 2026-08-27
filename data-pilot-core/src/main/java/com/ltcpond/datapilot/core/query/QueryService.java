@@ -33,7 +33,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
-/** 编排 Schema、Spring AI、SQL 安全网关和只读执行器的同步问数闭环。 */
+/** 编排 Schema、Spring AI、SQL 安全网关和只读执行器的问数任务闭环。 */
 @Service
 @RequiredArgsConstructor
 public class QueryService {
@@ -51,21 +51,31 @@ public class QueryService {
     private final SchemaPromptBuilder schemaPromptBuilder;
     private final SchemaRetriever schemaRetriever;
     private final QueryStateMachine stateMachine;
+    private final QueryResultSink resultSink;
     private final DataPilotAiProperties properties;
 
-    /** 创建同步任务并立即执行完整问数流程。 */
-    public QueryResultView execute(QueryCommand command) {
-        QueryTaskEntity task = createTask(command, "SYNC");
-        return executeTask(task.getId(), QueryResultSink.none());
-    }
-
-    /** 创建异步任务但不占用 HTTP 请求线程执行模型调用。 */
-    public QueryTaskView createAsync(QueryCommand command) {
-        return toView(createTask(command, "ASYNC"));
+    /** 创建后台任务但不占用 HTTP 请求线程执行模型调用。 */
+    public QueryTaskView createTask(QueryCommand command) {
+        requiredReadyDatasource(command.datasourceId());
+        if (datasourceService.schema(command.datasourceId()).tables().isEmpty()) {
+            throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
+        }
+        LocalDateTime now = LocalDateTime.now();
+        QueryTaskEntity task = new QueryTaskEntity();
+        task.setDatasourceId(command.datasourceId());
+        task.setQuestion(command.question().trim());
+        task.setMaxRows(normalizeMaxRows(command.maxRows()));
+        task.setStatus(QueryStatus.CREATED.name());
+        task.setRepairCount(0);
+        task.setRagUsed(false);
+        task.setRagFallback(false);
+        task.setCreatedAt(now);
+        task.setUpdatedAt(now);
+        return toView(taskStore.insertTask(task));
     }
 
     /** 执行已经持久化的任务；结果交付成功后才进入 SUCCEEDED。 */
-    public QueryResultView executeTask(long taskId, QueryResultSink resultSink) {
+    public QueryResultView executeTask(long taskId) {
         QueryTaskEntity task = taskStore.findTask(taskId)
                 .orElseThrow(() -> new AppException(ResponseCode.QUERY_TASK_NOT_FOUND));
         ensureCreatedOrCancel(task);
@@ -126,7 +136,7 @@ public class QueryService {
                     checkCancellation(task);
                     insertAttempt(task, attemptNo, attemptType(attemptNo), generation, "VALID", null);
                     return succeed(task, generation.result(), validation.executableSql(), execution,
-                            startedAt, retrieval.view(), resultSink);
+                            startedAt, retrieval.view());
                 } catch (AppException exception) {
                     if (exception.getResponseCode() != ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED) {
                         throw exception;
@@ -204,9 +214,9 @@ public class QueryService {
                 .ifPresent(task -> taskStore.deleteTask(queryId));
     }
 
-    /** 应用重启不重放外部模型调用，统一终止遗留异步任务。 */
-    public int failInterruptedAsyncTasks() {
-        List<QueryTaskEntity> tasks = taskStore.findInterruptedAsyncTasks(Set.of(
+    /** 应用重启不重放外部模型调用，统一终止遗留任务。 */
+    public int failInterruptedTasks() {
+        List<QueryTaskEntity> tasks = taskStore.findInterruptedTasks(Set.of(
                 QueryStatus.SUCCEEDED.name(), QueryStatus.FAILED.name(), QueryStatus.CANCELLED.name()));
         for (QueryTaskEntity task : tasks) {
             task.setErrorCode("APPLICATION_RESTARTED");
@@ -222,26 +232,6 @@ public class QueryService {
             throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
         }
         return datasource;
-    }
-
-    private QueryTaskEntity createTask(QueryCommand command, String executionMode) {
-        requiredReadyDatasource(command.datasourceId());
-        if (datasourceService.schema(command.datasourceId()).tables().isEmpty()) {
-            throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
-        }
-        LocalDateTime now = LocalDateTime.now();
-        QueryTaskEntity task = new QueryTaskEntity();
-        task.setDatasourceId(command.datasourceId());
-        task.setQuestion(command.question().trim());
-        task.setExecutionMode(executionMode);
-        task.setMaxRows(normalizeMaxRows(command.maxRows()));
-        task.setStatus(QueryStatus.CREATED.name());
-        task.setRepairCount(0);
-        task.setRagUsed(false);
-        task.setRagFallback(false);
-        task.setCreatedAt(now);
-        task.setUpdatedAt(now);
-        return taskStore.insertTask(task);
     }
 
     private GenerationAttempt generate(String question, String schemaPrompt) {
@@ -268,8 +258,7 @@ public class QueryService {
             String executableSql,
             QueryExecutionResult execution,
             Instant startedAt,
-            RetrievalView retrieval,
-            QueryResultSink resultSink) {
+            RetrievalView retrieval) {
         long durationMs = elapsedMillis(startedAt);
         task.setGeneratedSql(executableSql);
         task.setRowCount(execution.rows().size());
@@ -377,7 +366,6 @@ public class QueryService {
                 task.getId(),
                 task.getDatasourceId(),
                 task.getQuestion(),
-                task.getExecutionMode(),
                 task.getStatus(),
                 task.getQuestionAnalysis(),
                 splitRelatedTables(task.getRelatedTables()),

@@ -7,7 +7,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
-/** 通过Redis Pub/Sub广播状态；发布失败不得破坏同步问数流程。 */
+/** 通过Redis Pub/Sub广播状态；发布失败不得破坏问数任务流程。 */
 @Component
 @RequiredArgsConstructor
 public class RedisQueryEventPublisher implements QueryEventPublisher {

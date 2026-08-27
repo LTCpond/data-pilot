@@ -5,6 +5,7 @@ import com.ltcpond.datapilot.core.query.QueryCommand;
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.QueryResultView;
+import com.ltcpond.datapilot.core.query.QueryTaskView;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
 import com.ltcpond.datapilot.datasource.crypto.CredentialCipher;
@@ -94,8 +95,9 @@ class DeepSeekTextToSqlEvaluationTest {
         Long taskId = null;
         com.ltcpond.datapilot.core.query.RetrievalView retrieval = null;
         try {
-            QueryResultView generated = queryService.execute(
+            QueryTaskView task = queryService.createTask(
                     new QueryCommand(datasourceId, evaluationCase.question(), 200));
+            QueryResultView generated = queryService.executeTask(task.id());
             taskId = generated.queryId();
             retrieval = generated.retrieval();
             if (evaluationCase.comparison() == Comparison.REJECTED) {

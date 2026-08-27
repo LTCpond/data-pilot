@@ -27,7 +27,7 @@ class AsyncQueryCoordinatorTest {
         QueryService queryService = mock(QueryService.class);
         RedisQueryResultStore resultStore = mock(RedisQueryResultStore.class);
         ThreadPoolTaskExecutor executor = mock(ThreadPoolTaskExecutor.class);
-        when(queryService.createAsync(any())).thenReturn(task(11L, "CREATED"));
+        when(queryService.createTask(any())).thenReturn(task(11L, "CREATED"));
         AsyncQueryCoordinator coordinator = new AsyncQueryCoordinator(queryService, resultStore, executor);
 
         AsyncQueryAcceptedView result = coordinator.submit(new QueryCommand(1L, "查询订单", 100));
@@ -43,7 +43,7 @@ class AsyncQueryCoordinatorTest {
         QueryService queryService = mock(QueryService.class);
         RedisQueryResultStore resultStore = mock(RedisQueryResultStore.class);
         ThreadPoolTaskExecutor executor = mock(ThreadPoolTaskExecutor.class);
-        when(queryService.createAsync(any())).thenReturn(task(12L, "CREATED"));
+        when(queryService.createTask(any())).thenReturn(task(12L, "CREATED"));
         doThrow(new TaskRejectedException("full")).when(executor).execute(any(Runnable.class));
         AsyncQueryCoordinator coordinator = new AsyncQueryCoordinator(queryService, resultStore, executor);
 
@@ -55,7 +55,7 @@ class AsyncQueryCoordinatorTest {
 
     private QueryTaskView task(long id, String status) {
         return new QueryTaskView(
-                id, 1L, "查询订单", "ASYNC", status, null, List.of(), null, null,
+                id, 1L, "查询订单", status, null, List.of(), null, null,
                 null, 0, null, null, null, null,
                 LocalDateTime.now(), null, null);
     }

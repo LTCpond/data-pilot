@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $body = @{ question = $Question; maxRows = $MaxRows } | ConvertTo-Json
 $accepted = Invoke-RestMethod -Method Post `
-    -Uri "$BaseUrl/api/datasources/$DatasourceId/queries/async" `
+    -Uri "$BaseUrl/api/datasources/$DatasourceId/queries" `
     -ContentType 'application/json; charset=utf-8' `
     -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
 $queryId = $accepted.data.queryId

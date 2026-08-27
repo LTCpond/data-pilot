@@ -53,6 +53,7 @@ class QueryServiceTest {
     private SqlGenerator sqlGenerator;
     private SqlValidator sqlValidator;
     private ReadOnlyQueryExecutor queryExecutor;
+    private QueryResultSink resultSink;
     private QueryService service;
     private AtomicReference<QueryTaskEntity> storedTask;
 
@@ -65,6 +66,7 @@ class QueryServiceTest {
         sqlGenerator = mock(SqlGenerator.class);
         sqlValidator = mock(SqlValidator.class);
         queryExecutor = mock(ReadOnlyQueryExecutor.class);
+        resultSink = mock(QueryResultSink.class);
         storedTask = new AtomicReference<>();
 
         DataPilotAiProperties properties = new DataPilotAiProperties();
@@ -85,6 +87,7 @@ class QueryServiceTest {
                 new SchemaPromptBuilder(),
                 new SchemaRetriever(mock(SchemaVectorIndex.class), ragProperties),
                 new QueryStateMachine(taskStore),
+                resultSink,
                 properties);
 
         when(datasourceStore.findById(1L)).thenReturn(Optional.of(datasource()));
@@ -107,7 +110,7 @@ class QueryServiceTest {
         when(queryExecutor.execute(any(), any(), any(Integer.class), anyLong())).thenReturn(new QueryExecutionResult(
                 List.of("order_count"), List.of(Map.of("order_count", 60L))));
 
-        QueryResultView result = service.execute(new QueryCommand(1L, "查询订单数量", null));
+        QueryResultView result = executeTask(new QueryCommand(1L, "查询订单数量", null));
 
         assertThat(result.status()).isEqualTo("SUCCEEDED");
         assertThat(result.rowCount()).isEqualTo(1);
@@ -128,6 +131,25 @@ class QueryServiceTest {
     }
 
     @Test
+    void shouldFailTaskWhenResultDeliveryFails() {
+        when(sqlGenerator.generate(any())).thenReturn(generation("SELECT id FROM orders"));
+        when(sqlValidator.validate(any())).thenReturn(
+                SqlValidationResult.accepted("SELECT id FROM orders LIMIT 100"));
+        when(queryExecutor.execute(any(), any(), any(Integer.class), anyLong())).thenReturn(
+                new QueryExecutionResult(List.of("id"), List.of(Map.of("id", 1L))));
+        when(resultSink.store(any())).thenThrow(
+                new AppException(ResponseCode.QUERY_RESULT_DELIVERY_FAILED));
+
+        assertThatThrownBy(() -> executeTask(new QueryCommand(1L, "查询订单", 100)))
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode()).isEqualTo(
+                                ResponseCode.QUERY_RESULT_DELIVERY_FAILED));
+
+        assertThat(storedTask.get().getStatus()).isEqualTo("FAILED");
+        assertThat(storedTask.get().getErrorCode()).isEqualTo("RESULT_STORE_UNAVAILABLE");
+    }
+
+    @Test
     void shouldRepairOnceAfterValidationFailure() {
         when(sqlGenerator.generate(any())).thenReturn(generation("SELECT missing FROM orders"));
         when(sqlGenerator.repair(any())).thenReturn(generation("SELECT id FROM orders"));
@@ -137,7 +159,7 @@ class QueryServiceTest {
         when(queryExecutor.execute(any(), any(), any(Integer.class), anyLong())).thenReturn(new QueryExecutionResult(
                 List.of("id"), List.of(Map.of("id", 1L))));
 
-        QueryResultView result = service.execute(new QueryCommand(1L, "查询订单", 100));
+        QueryResultView result = executeTask(new QueryCommand(1L, "查询订单", 100));
 
         assertThat(result.status()).isEqualTo("SUCCEEDED");
         verify(sqlGenerator).repair(any());
@@ -151,7 +173,7 @@ class QueryServiceTest {
         when(sqlValidator.validate(any())).thenReturn(
                 SqlValidationResult.rejected(List.of("NON_SELECT_STATEMENT")));
 
-        assertThatThrownBy(() -> service.execute(new QueryCommand(1L, "删除所有订单", 100)))
+        assertThatThrownBy(() -> executeTask(new QueryCommand(1L, "删除所有订单", 100)))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_REJECTED));
 
@@ -167,7 +189,7 @@ class QueryServiceTest {
         when(sqlGenerator.generate(any())).thenReturn(outcome(new SqlGenerationResult(
                 false, "问题要求修改数据", List.of(), "", "不允许写操作", new BigDecimal("0.99"))));
 
-        assertThatThrownBy(() -> service.execute(new QueryCommand(1L, "删除所有订单", null)))
+        assertThatThrownBy(() -> executeTask(new QueryCommand(1L, "删除所有订单", null)))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_REJECTED));
         verify(sqlValidator, never()).validate(any());
@@ -183,7 +205,7 @@ class QueryServiceTest {
                 .thenThrow(new AppException(
                         ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED, "CONNECTION_FAILED"));
 
-        assertThatThrownBy(() -> service.execute(new QueryCommand(1L, "查询订单", null)))
+        assertThatThrownBy(() -> executeTask(new QueryCommand(1L, "查询订单", null)))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(
                                 ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED));
@@ -192,10 +214,9 @@ class QueryServiceTest {
     }
 
     @Test
-    void shouldCreateAsyncTaskWithoutCallingModel() {
-        QueryTaskView task = service.createAsync(new QueryCommand(1L, "查询订单", 50));
+    void shouldCreateTaskWithoutCallingModel() {
+        QueryTaskView task = service.createTask(new QueryCommand(1L, "查询订单", 50));
 
-        assertThat(task.executionMode()).isEqualTo("ASYNC");
         assertThat(task.status()).isEqualTo("CREATED");
         assertThat(storedTask.get().getMaxRows()).isEqualTo(50);
         verify(sqlGenerator, never()).generate(any());
@@ -203,17 +224,22 @@ class QueryServiceTest {
 
     @Test
     void shouldRequestCancellationAndCancelActiveJdbcStatement() {
-        QueryTaskView created = service.createAsync(new QueryCommand(1L, "查询订单", 50));
+        QueryTaskView created = service.createTask(new QueryCommand(1L, "查询订单", 50));
 
         QueryTaskView cancelled = service.cancel(created.id());
 
         assertThat(cancelled.status()).isEqualTo("CANCEL_REQUESTED");
         verify(queryExecutor).cancel(created.id());
-        assertThatThrownBy(() -> service.executeTask(created.id(), QueryResultSink.none()))
+        assertThatThrownBy(() -> service.executeTask(created.id()))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_TASK_CANCELLED));
         assertThat(storedTask.get().getStatus()).isEqualTo("CANCELLED");
         verify(sqlGenerator, never()).generate(any());
+    }
+
+    private QueryResultView executeTask(QueryCommand command) {
+        QueryTaskView task = service.createTask(command);
+        return service.executeTask(task.id());
     }
 
     private DatasourceEntity datasource() {

@@ -49,10 +49,9 @@ public class QueryTaskStore {
                 .last("LIMIT 100"));
     }
 
-    /** 应用启动时只清理异步非终态任务，避免重复调用模型或业务数据库。 */
-    public List<QueryTaskEntity> findInterruptedAsyncTasks(Set<String> terminalStatuses) {
+    /** 应用启动时清理非终态任务，避免重复调用模型或业务数据库。 */
+    public List<QueryTaskEntity> findInterruptedTasks(Set<String> terminalStatuses) {
         return taskMapper.selectList(Wrappers.<QueryTaskEntity>lambdaQuery()
-                .eq(QueryTaskEntity::getExecutionMode, "ASYNC")
                 .notIn(QueryTaskEntity::getStatus, terminalStatuses));
     }
 

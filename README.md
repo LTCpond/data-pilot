@@ -207,13 +207,12 @@ DATA_PILOT_AI_MODEL=your-model-name
 
 评测报告写入 `data-pilot-api/target/text-to-sql-evaluation/`，不会提交到 Git。
 
-## 异步查询与 SSE
+## 查询任务与 SSE
 
-同步和异步问数接口：
+问数任务接口：
 
 ```text
 POST /api/datasources/{datasourceId}/queries
-POST /api/datasources/{datasourceId}/queries/async
 GET  /api/queries/{queryId}
 GET  /api/queries/{queryId}/events
 GET  /api/queries/{queryId}/result
@@ -221,11 +220,11 @@ POST /api/queries/{queryId}/cancel
 GET  /api/datasources/{datasourceId}/queries
 ```
 
-异步提交立即返回 HTTP 202。任务状态持久化在 MySQL，事件通过 Redis Pub/Sub 广播，业务查询结果只在 Redis DB 1 中按任务 ID 保存 15 分钟，不会写入管理数据库，也不会被其他任务复用。
+任务提交立即返回 HTTP 202。任务状态持久化在 MySQL，事件通过 Redis Pub/Sub 广播，业务查询结果只在 Redis DB 1 中按任务 ID 保存 15 分钟，不会写入管理数据库，也不会被其他任务复用。
 
 SSE 断线重连时会先从 MySQL 返回当前任务快照，因此浏览器刷新后不依赖完整的历史事件也能恢复显示。查询取消时，SQL 执行阶段会调用 `Statement.cancel()`；模型请求阶段会在进入下一步流程前响应取消状态。
 
-运行异步查询演示：
+运行查询任务演示：
 
 ```powershell
 ./scripts/query-async-demo.ps1 -DatasourceId 1 -Question '查询订单数量'

@@ -9,7 +9,6 @@ public record QueryTaskView(
         long id,
         long datasourceId,
         String question,
-        String executionMode,
         String status,
         String questionAnalysis,
         List<String> relatedTables,

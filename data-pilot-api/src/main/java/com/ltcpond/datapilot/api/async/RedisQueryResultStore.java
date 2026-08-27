@@ -2,6 +2,7 @@ package com.ltcpond.datapilot.api.async;
 
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
+import com.ltcpond.datapilot.core.query.QueryResultSink;
 import com.ltcpond.datapilot.core.query.QueryResultView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.connection.RedisConnection;
@@ -15,7 +16,7 @@ import tools.jackson.databind.ObjectMapper;
 /** 仅按任务ID暂存结果，不跨任务复用自然语言问题。 */
 @Component
 @RequiredArgsConstructor
-public class RedisQueryResultStore {
+public class RedisQueryResultStore implements QueryResultSink {
 
     private static final String KEY_PREFIX = "data-pilot:query:result:";
 
@@ -35,6 +36,7 @@ public class RedisQueryResultStore {
     }
 
     /** 将成功查询结果序列化到 Redis，并返回客户端可见的过期时间。 */
+    @Override
     public LocalDateTime store(QueryResultView result) {
         try {
             redisTemplate.opsForValue().set(

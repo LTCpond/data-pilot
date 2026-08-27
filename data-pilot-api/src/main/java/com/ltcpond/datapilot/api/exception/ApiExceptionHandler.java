@@ -10,6 +10,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /** 将应用异常映射为稳定且脱敏的 HTTP 响应。 */
 @Slf4j
@@ -20,6 +22,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
     public ResponseEntity<ApiResponse<Void>> invalidRequest() {
         return error(ResponseCode.INVALID_REQUEST);
+    }
+
+    /** 将不存在的控制器或静态资源统一映射为 404。 */
+    @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+    public ResponseEntity<ApiResponse<Void>> resourceNotFound() {
+        return error(ResponseCode.RESOURCE_NOT_FOUND);
     }
 
     /** 将业务异常中的稳定响应码和 HTTP 状态透传给客户端。 */

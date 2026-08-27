@@ -13,9 +13,9 @@ public class AsyncQueryRecovery implements ApplicationRunner {
 
     private final QueryService queryService;
 
-    /** 应用启动后把重启前遗留的异步非终态任务统一标记失败。 */
+    /** 应用启动后把重启前遗留的非终态任务统一标记失败。 */
     @Override
     public void run(ApplicationArguments args) {
-        queryService.failInterruptedAsyncTasks();
+        queryService.failInterruptedTasks();
     }
 }

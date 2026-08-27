@@ -26,7 +26,7 @@ public class AsyncQueryCoordinator {
     /** 创建异步任务、提交到后台线程池，并返回客户端轮询和 SSE 订阅地址。 */
     public AsyncQueryAcceptedView submit(QueryCommand command) {
         resultStore.requireAvailable();
-        QueryTaskView task = queryService.createAsync(command);
+        QueryTaskView task = queryService.createTask(command);
         try {
             taskExecutor.execute(() -> run(task.id()));
         } catch (TaskRejectedException exception) {
@@ -42,9 +42,6 @@ public class AsyncQueryCoordinator {
     /** 读取异步任务当前状态；仅成功任务会从 Redis 装载临时结果数据。 */
     public AsyncQueryResultView result(long queryId) {
         QueryTaskView task = queryService.get(queryId);
-        if (!"ASYNC".equals(task.executionMode())) {
-            throw new AppException(ResponseCode.QUERY_RESULT_NOT_AVAILABLE);
-        }
         if (QueryStatus.SUCCEEDED.name().equals(task.status())) {
             QueryResultView result = resultStore.find(queryId)
                     .orElseThrow(() -> new AppException(ResponseCode.QUERY_RESULT_EXPIRED));
@@ -60,7 +57,7 @@ public class AsyncQueryCoordinator {
 
     private void run(long queryId) {
         try {
-            queryService.executeTask(queryId, resultStore::store);
+            queryService.executeTask(queryId);
         } catch (RuntimeException ignored) {
             // 核心服务已持久化取消状态或脱敏错误码；后台线程不得泄露异常详情。
         }

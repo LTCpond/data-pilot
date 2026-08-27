@@ -15,12 +15,12 @@ public enum ResponseCode {
     INVALID_REQUEST(40000, 400, "请求参数无效"),
     INVALID_DATASOURCE_CONFIGURATION(40001, 400, "数据源配置无效"),
 
+    RESOURCE_NOT_FOUND(40400, 404, "请求资源不存在"),
     DATASOURCE_NOT_FOUND(40401, 404, "数据源不存在"),
     QUERY_TASK_NOT_FOUND(40402, 404, "查询任务不存在"),
 
     DUPLICATE_DATASOURCE_NAME(40901, 409, "数据源名称已存在"),
     DATASOURCE_SCHEMA_NOT_READY(40902, 409, "数据源 Schema 尚未就绪"),
-    QUERY_RESULT_NOT_AVAILABLE(40903, 409, "查询结果暂不可用"),
     QUERY_TASK_CANCELLED(40904, 409, "查询任务已取消"),
 
     QUERY_RESULT_EXPIRED(41001, 410, "查询结果已过期"),

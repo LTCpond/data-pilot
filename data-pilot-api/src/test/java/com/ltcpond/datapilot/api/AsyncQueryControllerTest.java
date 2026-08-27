@@ -30,12 +30,21 @@ class AsyncQueryControllerTest {
         when(coordinator.submit(any())).thenReturn(new AsyncQueryAcceptedView(
                 9L, "CREATED", "/api/queries/9/events", "/api/queries/9/result"));
 
-        mockMvc(coordinator).perform(post("/api/datasources/1/queries/async")
+        mockMvc(coordinator).perform(post("/api/datasources/1/queries")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"question\":\"查询订单数量\",\"maxRows\":100}"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.queryId").value(9))
                 .andExpect(jsonPath("$.data.eventsUrl").value("/api/queries/9/events"));
+    }
+
+    @Test
+    void shouldRejectRemovedAsyncSubmitPath() throws Exception {
+        mockMvc(mock(AsyncQueryCoordinator.class))
+                .perform(post("/api/datasources/1/queries/async")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\":\"查询订单数量\"}"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
