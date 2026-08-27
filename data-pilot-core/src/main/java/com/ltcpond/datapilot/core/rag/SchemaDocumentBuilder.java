@@ -16,6 +16,7 @@ import java.util.UUID;
 @Component
 public class SchemaDocumentBuilder {
 
+    /** 为数据源当前 Schema 生成可写入向量库的一组版本化文档。 */
     public List<SchemaVectorDocument> build(long datasourceId, String indexVersion, DatasourceSchemaView schema) {
         List<SchemaVectorDocument> documents = new ArrayList<>();
         for (SchemaTableView table : schema.tables()) {

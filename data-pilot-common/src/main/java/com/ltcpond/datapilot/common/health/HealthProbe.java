@@ -11,6 +11,6 @@ public interface HealthProbe {
     /** 返回展示顺序，保证健康响应的组件顺序稳定。 */
     int order();
 
-    /** 执行一次健康检查。 */
+    /** 执行一次轻量健康检查；失败原因应由调用方统一脱敏处理。 */
     ComponentHealth check();
 }

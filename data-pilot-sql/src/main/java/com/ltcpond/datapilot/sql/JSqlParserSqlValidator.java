@@ -33,6 +33,7 @@ public class JSqlParserSqlValidator implements SqlValidator {
     private static final Pattern LIMIT_PATTERN = Pattern.compile(
             "(?is)\\s+LIMIT\\s+(?:(\\d+)\\s*,\\s*)?(\\d+)(?:\\s+OFFSET\\s+(\\d+))?\\s*$");
 
+    /** 解析并校验模型生成的 SQL，成功时返回带安全 LIMIT 的可执行 SQL。 */
     @Override
     public SqlValidationResult validate(SqlValidationRequest request) {
         List<String> violations = new ArrayList<>();

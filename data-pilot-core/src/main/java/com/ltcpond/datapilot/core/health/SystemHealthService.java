@@ -29,6 +29,7 @@ public class SystemHealthService implements AutoCloseable {
     private final Duration timeout;
     private final ExecutorService executor;
 
+    /** 使用 Spring 注入的所有探针创建健康检查服务。 */
     @Autowired
     public SystemHealthService(List<HealthProbe> probes) {
         this(probes, DEFAULT_TIMEOUT, Executors.newVirtualThreadPerTaskExecutor());
@@ -41,6 +42,7 @@ public class SystemHealthService implements AutoCloseable {
         this.executor = executor;
     }
 
+    /** 并行执行所有探针，任一探针异常或超时都会被折叠为 DOWN。 */
     public SystemHealth check() {
         Map<HealthProbe, CompletableFuture<ComponentHealth>> futures = new LinkedHashMap<>();
         for (HealthProbe probe : probes) {
@@ -67,6 +69,7 @@ public class SystemHealthService implements AutoCloseable {
         }
     }
 
+    /** 关闭健康检查使用的执行器，避免应用退出时遗留线程。 */
     @Override
     public void close() {
         executor.shutdownNow();

@@ -25,6 +25,7 @@ public class QuerySseService {
     private final AsyncQueryProperties properties;
     private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
 
+    /** 建立任务状态 SSE 连接，并立即发送一次当前任务快照。 */
     public SseEmitter connect(long queryId) {
         QueryTaskView task = queryService.get(queryId);
         SseEmitter emitter = new SseEmitter(properties.getSseTimeout().toMillis());
@@ -39,6 +40,7 @@ public class QuerySseService {
         return emitter;
     }
 
+    /** 向当前实例上订阅同一任务的所有 SSE 客户端广播状态变更。 */
     public void publish(QueryStatusEvent event) {
         String name = terminal(event.status()) ? "query-completed" : "query-status";
         for (SseEmitter emitter : emitters.getOrDefault(event.queryId(), new CopyOnWriteArrayList<>())) {
@@ -49,6 +51,7 @@ public class QuerySseService {
         }
     }
 
+    /** 定期发送心跳，避免代理或浏览器长连接因空闲被关闭。 */
     @Scheduled(fixedDelay = 15_000)
     void heartbeat() {
         for (Map.Entry<Long, CopyOnWriteArrayList<SseEmitter>> entry : emitters.entrySet()) {

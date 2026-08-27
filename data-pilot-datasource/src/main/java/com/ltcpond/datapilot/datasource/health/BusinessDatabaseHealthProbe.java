@@ -17,16 +17,19 @@ public class BusinessDatabaseHealthProbe implements HealthProbe {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /** 返回业务库在健康响应中的稳定组件名。 */
     @Override
     public String componentName() {
         return "businessDatabase";
     }
 
+    /** 让业务库检查排在管理库之后、Redis 之前。 */
     @Override
     public int order() {
         return 2;
     }
 
+    /** 执行轻量 SELECT 1，验证只读业务库连接可用。 */
     @Override
     public ComponentHealth check() {
         Integer result = jdbcTemplate.queryForObject("SELECT 1", Integer.class);

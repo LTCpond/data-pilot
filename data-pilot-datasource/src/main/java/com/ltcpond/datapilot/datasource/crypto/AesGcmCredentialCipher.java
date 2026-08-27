@@ -23,6 +23,7 @@ public class AesGcmCredentialCipher implements CredentialCipher {
     private final SecretKeySpec key;
     private final SecureRandom secureRandom = new SecureRandom();
 
+    /** 从配置读取并校验 AES-256 密钥。 */
     public AesGcmCredentialCipher(EncryptionProperties properties) {
         byte[] decoded;
         try {
@@ -36,6 +37,7 @@ public class AesGcmCredentialCipher implements CredentialCipher {
         this.key = new SecretKeySpec(decoded, "AES");
     }
 
+    /** 使用随机 IV 加密凭据，并在密文前加版本前缀。 */
     @Override
     public String encrypt(String plaintext) {
         byte[] iv = new byte[IV_LENGTH];
@@ -53,6 +55,7 @@ public class AesGcmCredentialCipher implements CredentialCipher {
         }
     }
 
+    /** 解密当前版本密文，并校验 GCM 认证标签。 */
     @Override
     public String decrypt(String ciphertext) {
         if (ciphertext == null || !ciphertext.startsWith(PREFIX)) {

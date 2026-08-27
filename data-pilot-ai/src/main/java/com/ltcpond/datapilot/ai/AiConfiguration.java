@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(DataPilotAiProperties.class)
 public class AiConfiguration {
 
+    /** 创建 SQL 生成器适配器；未注入 ChatModel 时由运行时可用性检查返回稳定错误。 */
     @Bean
     public SqlGenerator sqlGenerator(
             DataPilotAiProperties properties,

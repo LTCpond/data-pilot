@@ -28,6 +28,7 @@ public class SchemaRetriever {
     private final SchemaVectorIndex vectorIndex;
     private final RagProperties properties;
 
+    /** 根据 RAG 配置选择全量 Schema 或向量召回后的精简 Schema。 */
     public SchemaRetrievalResult retrieve(
             DatasourceEntity datasource, DatasourceSchemaView fullSchema, String question) {
         Instant startedAt = Instant.now();

@@ -1,7 +1,7 @@
 package com.ltcpond.datapilot.evaluation;
 
 import com.ltcpond.datapilot.DataPilotApplication;
-import com.ltcpond.datapilot.core.query.CreateQueryCommand;
+import com.ltcpond.datapilot.core.query.QueryCommand;
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.QueryResultView;
@@ -29,7 +29,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -96,7 +95,7 @@ class DeepSeekTextToSqlEvaluationTest {
         com.ltcpond.datapilot.core.query.RetrievalView retrieval = null;
         try {
             QueryResultView generated = queryService.execute(
-                    new CreateQueryCommand(datasourceId, evaluationCase.question(), 200));
+                    new QueryCommand(datasourceId, evaluationCase.question(), 200));
             taskId = generated.queryId();
             retrieval = generated.retrieval();
             if (evaluationCase.comparison() == Comparison.REJECTED) {

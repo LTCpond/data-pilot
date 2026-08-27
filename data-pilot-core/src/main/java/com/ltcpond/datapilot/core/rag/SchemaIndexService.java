@@ -27,6 +27,7 @@ public class SchemaIndexService {
     private final SchemaVectorIndex vectorIndex;
     private final RagProperties properties;
 
+    /** 重建指定数据源的 Schema 向量索引，成功后原子切换活动版本。 */
     public RagIndexResultView rebuild(long datasourceId) {
         DatasourceEntity datasource = store.findById(datasourceId)
                 .orElseThrow(() -> new AppException(ResponseCode.DATASOURCE_NOT_FOUND));

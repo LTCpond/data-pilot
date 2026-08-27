@@ -53,13 +53,14 @@ public class QueryService {
     private final QueryStateMachine stateMachine;
     private final DataPilotAiProperties properties;
 
-    public QueryResultView execute(CreateQueryCommand command) {
+    /** 创建同步任务并立即执行完整问数流程。 */
+    public QueryResultView execute(QueryCommand command) {
         QueryTaskEntity task = createTask(command, "SYNC");
         return executeTask(task.getId(), QueryResultSink.none());
     }
 
     /** 创建异步任务但不占用 HTTP 请求线程执行模型调用。 */
-    public QueryTaskView createAsync(CreateQueryCommand command) {
+    public QueryTaskView createAsync(QueryCommand command) {
         return toView(createTask(command, "ASYNC"));
     }
 
@@ -169,16 +170,19 @@ public class QueryService {
         }
     }
 
+    /** 读取任务当前持久化状态，任务不存在时抛出稳定业务异常。 */
     public QueryTaskView get(long queryId) {
         return toView(taskStore.findTask(queryId)
                 .orElseThrow(() -> new AppException(ResponseCode.QUERY_TASK_NOT_FOUND)));
     }
 
+    /** 返回指定数据源最近的问数任务列表，并先确认数据源存在。 */
     public List<QueryTaskView> list(long datasourceId) {
         datasourceService.get(datasourceId);
         return taskStore.findTasks(datasourceId).stream().map(this::toView).toList();
     }
 
+    /** 将运行中任务标记为取消请求，并尽力取消底层 JDBC Statement。 */
     public QueryTaskView cancel(long queryId) {
         QueryTaskEntity task = taskStore.findTask(queryId)
                 .orElseThrow(() -> new AppException(ResponseCode.QUERY_TASK_NOT_FOUND));
@@ -220,7 +224,7 @@ public class QueryService {
         return datasource;
     }
 
-    private QueryTaskEntity createTask(CreateQueryCommand command, String executionMode) {
+    private QueryTaskEntity createTask(QueryCommand command, String executionMode) {
         requiredReadyDatasource(command.datasourceId());
         if (datasourceService.schema(command.datasourceId()).tables().isEmpty()) {
             throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);

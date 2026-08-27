@@ -10,10 +10,12 @@ public record MetadataSnapshot(List<MetadataTable> tables, List<MetadataRelation
         relations = List.copyOf(relations);
     }
 
+    /** 统计快照内所有表的字段数量。 */
     public int columnCount() {
         return tables.stream().mapToInt(table -> table.columns().size()).sum();
     }
 
+    /** 统计快照内被标记为主键的字段数量。 */
     public int primaryKeyCount() {
         return (int) tables.stream()
                 .flatMap(table -> table.columns().stream())

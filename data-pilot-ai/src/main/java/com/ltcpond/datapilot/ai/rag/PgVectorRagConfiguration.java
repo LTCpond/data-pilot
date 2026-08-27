@@ -22,6 +22,7 @@ public class PgVectorRagConfiguration {
 
     public static final String VECTOR_TABLE = "dp_schema_vector";
 
+    /** 在启用 Ollama embedding 时创建独立的 pgvector 数据源。 */
     @Bean(name = "ragDataSource", destroyMethod = "close")
     @ConditionalOnProperty(prefix = "spring.ai.model", name = "embedding", havingValue = "ollama")
     HikariDataSource ragDataSource(RagProperties properties) {
@@ -37,12 +38,14 @@ public class PgVectorRagConfiguration {
         return new HikariDataSource(config);
     }
 
+    /** 创建访问 pgvector 表的 JdbcTemplate。 */
     @Bean(name = "ragJdbcTemplate")
     @ConditionalOnProperty(prefix = "spring.ai.model", name = "embedding", havingValue = "ollama")
     JdbcTemplate ragJdbcTemplate(@Qualifier("ragDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
 
+    /** 创建 Schema 专用 PgVectorStore，并自动初始化向量表结构。 */
     @Bean
     @ConditionalOnProperty(prefix = "spring.ai.model", name = "embedding", havingValue = "ollama")
     PgVectorStore schemaPgVectorStore(

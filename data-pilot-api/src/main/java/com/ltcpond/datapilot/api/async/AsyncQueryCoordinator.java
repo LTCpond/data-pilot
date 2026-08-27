@@ -2,7 +2,7 @@ package com.ltcpond.datapilot.api.async;
 
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
-import com.ltcpond.datapilot.core.query.CreateQueryCommand;
+import com.ltcpond.datapilot.core.query.QueryCommand;
 import com.ltcpond.datapilot.core.query.QueryResultView;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.core.query.QueryStatus;
@@ -23,7 +23,8 @@ public class AsyncQueryCoordinator {
     @Qualifier("queryTaskExecutor")
     private final ThreadPoolTaskExecutor taskExecutor;
 
-    public AsyncQueryAcceptedView submit(CreateQueryCommand command) {
+    /** 创建异步任务、提交到后台线程池，并返回客户端轮询和 SSE 订阅地址。 */
+    public AsyncQueryAcceptedView submit(QueryCommand command) {
         resultStore.requireAvailable();
         QueryTaskView task = queryService.createAsync(command);
         try {
@@ -38,6 +39,7 @@ public class AsyncQueryCoordinator {
                 "/api/queries/" + task.id() + "/result");
     }
 
+    /** 读取异步任务当前状态；仅成功任务会从 Redis 装载临时结果数据。 */
     public AsyncQueryResultView result(long queryId) {
         QueryTaskView task = queryService.get(queryId);
         if (!"ASYNC".equals(task.executionMode())) {
@@ -51,6 +53,7 @@ public class AsyncQueryCoordinator {
         return view(task, null);
     }
 
+    /** 请求取消异步任务，并把取消动作委托给核心任务服务和底层执行器。 */
     public QueryTaskView cancel(long queryId) {
         return queryService.cancel(queryId);
     }

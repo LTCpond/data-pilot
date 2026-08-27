@@ -18,6 +18,7 @@ public class MysqlConnectionTester {
 
     private final TemporaryMysqlDataSourceFactory dataSourceFactory;
 
+    /** 使用临时连接池执行 SELECT 1，并返回数据库产品和版本信息。 */
     public ConnectionTestResult test(DatasourceConnectionInfo connectionInfo) {
         try (HikariDataSource dataSource = dataSourceFactory.create(connectionInfo);
              Connection connection = dataSource.getConnection();

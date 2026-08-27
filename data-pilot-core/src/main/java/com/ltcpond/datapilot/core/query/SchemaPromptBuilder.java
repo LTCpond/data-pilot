@@ -16,6 +16,7 @@ import java.util.Set;
 @Component
 public class SchemaPromptBuilder {
 
+    /** 将表、字段和外键关系转换为模型提示词中的 Schema 文本。 */
     public String build(DatasourceSchemaView schema) {
         StringBuilder prompt = new StringBuilder();
         for (SchemaTableView table : schema.tables()) {
@@ -49,6 +50,7 @@ public class SchemaPromptBuilder {
         return prompt.toString().trim();
     }
 
+    /** 生成 SQL 安全校验使用的允许访问表集合，包含简单表名和 schema.表名。 */
     public Set<String> allowedTables(DatasourceSchemaView schema) {
         Set<String> tables = new LinkedHashSet<>();
         for (SchemaTableView table : schema.tables()) {
@@ -58,6 +60,7 @@ public class SchemaPromptBuilder {
         return Set.copyOf(tables);
     }
 
+    /** 生成 SQL 安全校验使用的表到字段白名单映射。 */
     public Map<String, Set<String>> allowedColumns(DatasourceSchemaView schema) {
         Map<String, Set<String>> columnsByTable = new LinkedHashMap<>();
         for (SchemaTableView table : schema.tables()) {

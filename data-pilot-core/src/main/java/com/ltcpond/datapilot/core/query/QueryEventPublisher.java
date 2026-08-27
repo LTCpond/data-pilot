@@ -4,5 +4,6 @@ package com.ltcpond.datapilot.core.query;
 @FunctionalInterface
 public interface QueryEventPublisher {
 
+    /** 发布任务状态变更事件，供 SSE 或其他异步通知机制消费。 */
     void publish(QueryStatusEvent event);
 }

@@ -38,6 +38,7 @@ public class QueryStateMachine {
         this.eventPublisher = eventPublisher;
     }
 
+    /** 校验并持久化任务状态转换，同时向事件发布器广播最新状态。 */
     public void transition(QueryTaskEntity task, QueryStatus target) {
         QueryStatus current = QueryStatus.valueOf(task.getStatus());
         if (!TRANSITIONS.getOrDefault(current, Set.of()).contains(target)) {

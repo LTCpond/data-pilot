@@ -1,4 +1,4 @@
-package com.ltcpond.datapilot.api;
+package com.ltcpond.datapilot.api.controller;
 
 import com.ltcpond.datapilot.common.api.ApiResponse;
 import com.ltcpond.datapilot.common.health.SystemHealth;
@@ -20,6 +20,7 @@ public class HealthController {
 
     private final SystemHealthService healthService;
 
+    /** 聚合关键外部依赖健康状态，任一依赖 DOWN 时返回 503。 */
     @GetMapping("/health")
     public ResponseEntity<ApiResponse<SystemHealth>> health() {
         SystemHealth health = healthService.check();

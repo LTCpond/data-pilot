@@ -12,6 +12,7 @@ public class TemporaryMysqlDataSourceFactory {
 
     private static final String MYSQL_PREFIX = "jdbc:mysql://";
 
+    /** 基于调用方连接信息创建短生命周期 MySQL 只读连接池。 */
     public HikariDataSource create(DatasourceConnectionInfo connectionInfo) {
         validateJdbcUrl(connectionInfo.jdbcUrl());
 
@@ -29,6 +30,7 @@ public class TemporaryMysqlDataSourceFactory {
         return new HikariDataSource(config);
     }
 
+    /** 限制 JDBC URL 只能指向 MySQL。 */
     public void validateJdbcUrl(String jdbcUrl) {
         if (jdbcUrl == null || !jdbcUrl.toLowerCase(Locale.ROOT).startsWith(MYSQL_PREFIX)) {
             throw new IllegalArgumentException("仅支持 jdbc:mysql:// 格式的连接地址");

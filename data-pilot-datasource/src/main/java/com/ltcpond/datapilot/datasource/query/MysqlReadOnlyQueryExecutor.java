@@ -30,6 +30,7 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
     private final TemporaryMysqlDataSourceFactory dataSourceFactory;
     private final Map<Long, Statement> activeStatements = new ConcurrentHashMap<>();
 
+    /** 执行不需要取消跟踪的只读查询。 */
     @Override
     public QueryExecutionResult execute(
             DatasourceConnectionInfo connectionInfo,
@@ -38,6 +39,7 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
         return execute(connectionInfo, sql, maxRows, 0L);
     }
 
+    /** 先 EXPLAIN 再执行 SQL，并注册任务 Statement 以支持取消。 */
     @Override
     public QueryExecutionResult execute(
             DatasourceConnectionInfo connectionInfo,
@@ -58,6 +60,7 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
         }
     }
 
+    /** 尽力取消指定任务当前正在执行的 Statement。 */
     @Override
     public void cancel(long taskId) {
         Statement statement = activeStatements.get(taskId);

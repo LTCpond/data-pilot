@@ -19,6 +19,7 @@ import javax.sql.DataSource;
 @EnableConfigurationProperties({BusinessDataSourceProperties.class, EncryptionProperties.class})
 public class DataSourceConfiguration {
 
+    /** 绑定管理库连接配置，作为默认数据源属性。 */
     @Bean
     @Primary
     @ConfigurationProperties("spring.datasource")
@@ -26,6 +27,7 @@ public class DataSourceConfiguration {
         return new DataSourceProperties();
     }
 
+    /** 创建用于保存项目配置、任务和元数据的管理库连接池。 */
     @Bean(name = "managementDataSource")
     @Primary
     public HikariDataSource managementDataSource(
@@ -40,6 +42,7 @@ public class DataSourceConfiguration {
         return dataSource;
     }
 
+    /** 创建管理库 JdbcTemplate，供 store 和迁移后的业务读写使用。 */
     @Bean(name = "managementJdbcTemplate")
     @Primary
     public JdbcTemplate managementJdbcTemplate(
@@ -47,6 +50,7 @@ public class DataSourceConfiguration {
         return jdbcTemplate(dataSource);
     }
 
+    /** 创建只读业务库连接池，供示例数据查询和健康探针使用。 */
     @Bean(name = "businessDataSource", destroyMethod = "close")
     public HikariDataSource businessDataSource(BusinessDataSourceProperties properties) {
         HikariDataSource dataSource = new HikariDataSource();
@@ -63,6 +67,7 @@ public class DataSourceConfiguration {
         return dataSource;
     }
 
+    /** 创建业务库 JdbcTemplate，并应用统一查询超时。 */
     @Bean(name = "businessJdbcTemplate")
     public JdbcTemplate businessJdbcTemplate(
             @Qualifier("businessDataSource") DataSource dataSource) {

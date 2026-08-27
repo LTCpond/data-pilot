@@ -23,6 +23,7 @@ public class RedisQueryResultStore {
     private final ObjectMapper objectMapper;
     private final AsyncQueryProperties properties;
 
+    /** 在提交异步任务前确认 Redis 可用，避免任务完成后无处交付结果。 */
     public void requireAvailable() {
         try (RedisConnection connection = redisTemplate.getConnectionFactory().getConnection()) {
             if (connection.ping() == null) {
@@ -33,6 +34,7 @@ public class RedisQueryResultStore {
         }
     }
 
+    /** 将成功查询结果序列化到 Redis，并返回客户端可见的过期时间。 */
     public LocalDateTime store(QueryResultView result) {
         try {
             redisTemplate.opsForValue().set(
@@ -45,6 +47,7 @@ public class RedisQueryResultStore {
         }
     }
 
+    /** 按任务 ID 读取异步结果；键不存在时表示结果已过期或尚未写入。 */
     public Optional<QueryResultView> find(long queryId) {
         try {
             String json = redisTemplate.opsForValue().get(key(queryId));

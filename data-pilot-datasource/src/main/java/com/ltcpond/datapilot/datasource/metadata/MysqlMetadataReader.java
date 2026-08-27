@@ -23,6 +23,7 @@ public class MysqlMetadataReader {
 
     private final TemporaryMysqlDataSourceFactory dataSourceFactory;
 
+    /** 使用外部数据源连接信息读取完整元数据快照。 */
     public MetadataSnapshot read(DatasourceConnectionInfo connectionInfo) {
         try (HikariDataSource dataSource = dataSourceFactory.create(connectionInfo);
              Connection connection = dataSource.getConnection()) {

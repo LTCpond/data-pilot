@@ -15,6 +15,7 @@ public class RedisQueryEventPublisher implements QueryEventPublisher {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
+    /** 将任务状态事件发布到 Redis channel，失败时静默降级到轮询恢复。 */
     @Override
     public void publish(QueryStatusEvent event) {
         try {

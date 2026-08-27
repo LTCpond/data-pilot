@@ -1,4 +1,4 @@
-package com.ltcpond.datapilot.api;
+package com.ltcpond.datapilot.api.exception;
 
 import com.ltcpond.datapilot.common.api.ApiResponse;
 import com.ltcpond.datapilot.common.api.ResponseCode;
@@ -16,17 +16,20 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
+    /** 将请求体格式错误和参数校验失败统一映射为 400。 */
     @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
     public ResponseEntity<ApiResponse<Void>> invalidRequest() {
         return error(ResponseCode.INVALID_REQUEST);
     }
 
+    /** 将业务异常中的稳定响应码和 HTTP 状态透传给客户端。 */
     @ExceptionHandler(AppException.class)
     public ResponseEntity<ApiResponse<Void>> applicationException(AppException exception) {
         return ResponseEntity.status(exception.getHttpStatus())
                 .body(ApiResponse.error(exception.getCode(), exception.getMessage()));
     }
 
+    /** 捕获未预期异常并返回脱敏的内部错误响应。 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> unexpectedException(Exception exception) {
         // 异常消息可能包含连接信息或驱动细节，因此日志只记录异常类型。

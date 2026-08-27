@@ -39,6 +39,7 @@ public class DatasourceService {
     private final CredentialCipher credentialCipher;
     private final ObjectProvider<SchemaIndexService> schemaIndexServiceProvider;
 
+    /** 使用临时连接验证外部数据源配置，并返回数据库产品信息。 */
     public ConnectionTestView testConnection(ConnectionTestCommand command) {
         try {
             ConnectionTestResult result = connectionTester.test(connectionInfo(command));
@@ -53,7 +54,8 @@ public class DatasourceService {
         }
     }
 
-    public DatasourceView create(CreateDatasourceCommand command) {
+    /** 创建数据源前先验证连通性，随后加密密码并保存配置。 */
+    public DatasourceView create(DatasourceCommand command) {
         String normalizedName = command.name().trim();
         if (store.findByName(normalizedName).isPresent()) {
             throw new AppException(ResponseCode.DUPLICATE_DATASOURCE_NAME);
@@ -80,14 +82,17 @@ public class DatasourceService {
         }
     }
 
+    /** 返回所有已配置数据源的安全视图。 */
     public List<DatasourceView> list() {
         return store.findAll().stream().map(this::toView).toList();
     }
 
+    /** 按 ID 返回数据源安全视图，不存在时抛出业务异常。 */
     public DatasourceView get(long datasourceId) {
         return toView(requiredDatasource(datasourceId));
     }
 
+    /** 从外部数据源读取最新元数据并写入管理库，随后尽力重建 RAG 索引。 */
     public SyncResultView synchronize(long datasourceId) {
         DatasourceEntity datasource = requiredDatasource(datasourceId);
         try {
@@ -126,6 +131,7 @@ public class DatasourceService {
         }
     }
 
+    /** 读取管理库中最近一次同步的 Schema 快照并转换为 API 视图。 */
     public DatasourceSchemaView schema(long datasourceId) {
         requiredDatasource(datasourceId);
         StoredSchema schema = store.loadSchema(datasourceId);

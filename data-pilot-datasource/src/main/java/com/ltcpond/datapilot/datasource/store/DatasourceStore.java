@@ -35,25 +35,30 @@ public class DatasourceStore {
     private final SchemaColumnMapper columnMapper;
     private final SchemaRelationMapper relationMapper;
 
+    /** 按主键查找数据源配置。 */
     public Optional<DatasourceEntity> findById(long id) {
         return Optional.ofNullable(datasourceMapper.selectById(id));
     }
 
+    /** 按唯一名称查找数据源配置。 */
     public Optional<DatasourceEntity> findByName(String name) {
         return Optional.ofNullable(datasourceMapper.selectOne(Wrappers.<DatasourceEntity>lambdaQuery()
                 .eq(DatasourceEntity::getName, name)));
     }
 
+    /** 按 ID 升序列出所有数据源配置。 */
     public List<DatasourceEntity> findAll() {
         return datasourceMapper.selectList(Wrappers.<DatasourceEntity>lambdaQuery()
                 .orderByAsc(DatasourceEntity::getId));
     }
 
+    /** 插入数据源配置，并返回带自增 ID 的实体。 */
     public DatasourceEntity insert(DatasourceEntity datasource) {
         datasourceMapper.insert(datasource);
         return datasource;
     }
 
+    /** 将数据源标记为不可用，通常用于同步或连接失败后的状态收敛。 */
     public void markError(long datasourceId) {
         DatasourceEntity update = new DatasourceEntity();
         update.setId(datasourceId);
@@ -62,6 +67,7 @@ public class DatasourceStore {
         datasourceMapper.updateById(update);
     }
 
+    /** 标记数据源的 RAG 索引正在重建。 */
     public void markRagIndexing(long datasourceId) {
         DatasourceEntity update = new DatasourceEntity();
         update.setId(datasourceId);
@@ -71,6 +77,7 @@ public class DatasourceStore {
         datasourceMapper.updateById(update);
     }
 
+    /** 标记 RAG 索引重建成功，并切换到新的活动索引版本。 */
     public void markRagReady(
             long datasourceId, String indexVersion, int documentCount, LocalDateTime indexedAt) {
         DatasourceEntity update = new DatasourceEntity();
@@ -94,6 +101,7 @@ public class DatasourceStore {
         datasourceMapper.updateById(update);
     }
 
+    /** 在元数据变更后把 RAG 状态重置为待索引。 */
     public void markRagPending(long datasourceId) {
         DatasourceEntity update = new DatasourceEntity();
         update.setId(datasourceId);
@@ -103,6 +111,7 @@ public class DatasourceStore {
         datasourceMapper.updateById(update);
     }
 
+    /** 从管理库装载数据源最近一次同步的完整 Schema 快照。 */
     public StoredSchema loadSchema(long datasourceId) {
         List<SchemaTableEntity> tables = tableMapper.selectList(Wrappers.<SchemaTableEntity>lambdaQuery()
                 .eq(SchemaTableEntity::getDatasourceId, datasourceId)

@@ -1,5 +1,6 @@
 package com.ltcpond.datapilot.api;
 
+import com.ltcpond.datapilot.api.controller.HealthController;
 import com.ltcpond.datapilot.common.health.ComponentHealth;
 import com.ltcpond.datapilot.common.health.SystemHealth;
 import com.ltcpond.datapilot.core.health.SystemHealthService;

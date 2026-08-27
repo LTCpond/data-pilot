@@ -17,16 +17,19 @@ public class ManagementDatabaseHealthProbe implements HealthProbe {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /** 返回管理库在健康响应中的稳定组件名。 */
     @Override
     public String componentName() {
         return "managementDatabase";
     }
 
+    /** 让管理库检查在健康响应中优先展示。 */
     @Override
     public int order() {
         return 1;
     }
 
+    /** 执行轻量 SELECT 1，验证管理库连接可用。 */
     @Override
     public ComponentHealth check() {
         Integer result = jdbcTemplate.queryForObject("SELECT 1", Integer.class);

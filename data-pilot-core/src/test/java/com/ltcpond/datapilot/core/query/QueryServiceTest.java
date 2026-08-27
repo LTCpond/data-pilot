@@ -107,7 +107,7 @@ class QueryServiceTest {
         when(queryExecutor.execute(any(), any(), any(Integer.class), anyLong())).thenReturn(new QueryExecutionResult(
                 List.of("order_count"), List.of(Map.of("order_count", 60L))));
 
-        QueryResultView result = service.execute(new CreateQueryCommand(1L, "查询订单数量", null));
+        QueryResultView result = service.execute(new QueryCommand(1L, "查询订单数量", null));
 
         assertThat(result.status()).isEqualTo("SUCCEEDED");
         assertThat(result.rowCount()).isEqualTo(1);
@@ -137,7 +137,7 @@ class QueryServiceTest {
         when(queryExecutor.execute(any(), any(), any(Integer.class), anyLong())).thenReturn(new QueryExecutionResult(
                 List.of("id"), List.of(Map.of("id", 1L))));
 
-        QueryResultView result = service.execute(new CreateQueryCommand(1L, "查询订单", 100));
+        QueryResultView result = service.execute(new QueryCommand(1L, "查询订单", 100));
 
         assertThat(result.status()).isEqualTo("SUCCEEDED");
         verify(sqlGenerator).repair(any());
@@ -151,7 +151,7 @@ class QueryServiceTest {
         when(sqlValidator.validate(any())).thenReturn(
                 SqlValidationResult.rejected(List.of("NON_SELECT_STATEMENT")));
 
-        assertThatThrownBy(() -> service.execute(new CreateQueryCommand(1L, "删除所有订单", 100)))
+        assertThatThrownBy(() -> service.execute(new QueryCommand(1L, "删除所有订单", 100)))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_REJECTED));
 
@@ -167,7 +167,7 @@ class QueryServiceTest {
         when(sqlGenerator.generate(any())).thenReturn(outcome(new SqlGenerationResult(
                 false, "问题要求修改数据", List.of(), "", "不允许写操作", new BigDecimal("0.99"))));
 
-        assertThatThrownBy(() -> service.execute(new CreateQueryCommand(1L, "删除所有订单", null)))
+        assertThatThrownBy(() -> service.execute(new QueryCommand(1L, "删除所有订单", null)))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.QUERY_REJECTED));
         verify(sqlValidator, never()).validate(any());
@@ -183,7 +183,7 @@ class QueryServiceTest {
                 .thenThrow(new AppException(
                         ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED, "CONNECTION_FAILED"));
 
-        assertThatThrownBy(() -> service.execute(new CreateQueryCommand(1L, "查询订单", null)))
+        assertThatThrownBy(() -> service.execute(new QueryCommand(1L, "查询订单", null)))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(
                                 ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED));
@@ -193,7 +193,7 @@ class QueryServiceTest {
 
     @Test
     void shouldCreateAsyncTaskWithoutCallingModel() {
-        QueryTaskView task = service.createAsync(new CreateQueryCommand(1L, "查询订单", 50));
+        QueryTaskView task = service.createAsync(new QueryCommand(1L, "查询订单", 50));
 
         assertThat(task.executionMode()).isEqualTo("ASYNC");
         assertThat(task.status()).isEqualTo("CREATED");
@@ -203,7 +203,7 @@ class QueryServiceTest {
 
     @Test
     void shouldRequestCancellationAndCancelActiveJdbcStatement() {
-        QueryTaskView created = service.createAsync(new CreateQueryCommand(1L, "查询订单", 50));
+        QueryTaskView created = service.createAsync(new QueryCommand(1L, "查询订单", 50));
 
         QueryTaskView cancelled = service.cancel(created.id());
 

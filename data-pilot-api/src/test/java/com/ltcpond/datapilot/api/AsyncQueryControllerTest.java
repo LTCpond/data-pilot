@@ -4,6 +4,8 @@ import com.ltcpond.datapilot.api.async.AsyncQueryAcceptedView;
 import com.ltcpond.datapilot.api.async.AsyncQueryCoordinator;
 import com.ltcpond.datapilot.api.async.AsyncQueryResultView;
 import com.ltcpond.datapilot.api.async.QuerySseService;
+import com.ltcpond.datapilot.api.controller.AsyncQueryController;
+import com.ltcpond.datapilot.api.exception.ApiExceptionHandler;
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
 import org.junit.jupiter.api.Test;
@@ -37,7 +39,7 @@ class AsyncQueryControllerTest {
     }
 
     @Test
-    void shouldReturnAcceptedWhileResultIsRunningAndConflictWhenFailed() throws Exception {
+    void shouldReturnAcceptedWhileResultIsRunningAndOkWhenFailed() throws Exception {
         AsyncQueryCoordinator coordinator = mock(AsyncQueryCoordinator.class);
         when(coordinator.result(9L)).thenReturn(new AsyncQueryResultView(
                 9L, "SQL_GENERATING", null, null, null));
@@ -48,7 +50,7 @@ class AsyncQueryControllerTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.status").value("SQL_GENERATING"));
         mockMvc(coordinator).perform(get("/api/queries/10/result"))
-                .andExpect(status().isConflict())
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.errorCode").value("AI_MODEL_UNAVAILABLE"));
     }
 

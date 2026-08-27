@@ -110,8 +110,8 @@ class DatasourceServiceTest {
         verify(store).markError(9L);
     }
 
-    private CreateDatasourceCommand command() {
-        return new CreateDatasourceCommand(
+    private DatasourceCommand command() {
+        return new DatasourceCommand(
                 "demo", "demo database", "jdbc:mysql://localhost/demo", "reader", "test-secret");
     }
 }

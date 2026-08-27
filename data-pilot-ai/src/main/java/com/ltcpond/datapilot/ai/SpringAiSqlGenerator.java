@@ -78,6 +78,7 @@ final class SpringAiSqlGenerator implements SqlGenerator {
         this.chatClient = chatModel == null ? null : ChatClient.create(chatModel);
     }
 
+    /** 调用模型生成结构化 SQL 结果，并记录模型调用指标。 */
     @Override
     public SqlGenerationOutcome generate(SqlGenerationRequest request) {
         ensureAvailable();
@@ -86,6 +87,7 @@ final class SpringAiSqlGenerator implements SqlGenerator {
                 .replace("{schema}", request.schema()));
     }
 
+    /** 调用模型修复候选 SQL，输入只包含脱敏后的失败原因。 */
     @Override
     public SqlGenerationOutcome repair(SqlRepairRequest request) {
         ensureAvailable();
