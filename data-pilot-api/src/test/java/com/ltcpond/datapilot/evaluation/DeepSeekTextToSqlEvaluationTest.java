@@ -1,5 +1,6 @@
 package com.ltcpond.datapilot.evaluation;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.ltcpond.datapilot.DataPilotApplication;
 import com.ltcpond.datapilot.core.query.QueryCommand;
 import com.ltcpond.datapilot.common.api.ResponseCode;
@@ -12,6 +13,7 @@ import com.ltcpond.datapilot.datasource.crypto.CredentialCipher;
 import com.ltcpond.datapilot.datasource.entity.DatasourceEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryAttemptEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryTaskEntity;
+import com.ltcpond.datapilot.datasource.mapper.QueryAttemptMapper;
 import com.ltcpond.datapilot.datasource.query.QueryExecutionResult;
 import com.ltcpond.datapilot.datasource.query.ReadOnlyQueryExecutor;
 import com.ltcpond.datapilot.datasource.store.DatasourceStore;
@@ -53,6 +55,8 @@ class DeepSeekTextToSqlEvaluationTest {
     private DatasourceStore datasourceStore;
     @Autowired
     private QueryTaskStore taskStore;
+    @Autowired
+    private QueryAttemptMapper attemptMapper;
     @Autowired
     private CredentialCipher credentialCipher;
     @Autowired
@@ -104,7 +108,7 @@ class DeepSeekTextToSqlEvaluationTest {
                 detail = "expected rejection but SQL executed";
             } else {
                 QueryExecutionResult expected = queryExecutor.execute(
-                        connection, evaluationCase.referenceSql(), 200);
+                        connection, evaluationCase.referenceSql(), 200, task.id());
                 passed = resultComparator.compare(
                         evaluationCase.comparison().name(), generated.rows(), expected.rows());
                 detail = passed ? "matched" : "result mismatch";
@@ -132,7 +136,7 @@ class DeepSeekTextToSqlEvaluationTest {
                     splitTables(task.getRetrievedTables()),
                     task.getRetrievalDurationMs() == null ? 0L : task.getRetrievalDurationMs());
         }
-        List<QueryAttemptEntity> attempts = taskId == null ? List.of() : taskStore.findAttempts(taskId);
+        List<QueryAttemptEntity> attempts = taskId == null ? List.of() : findAttempts(taskId);
         int promptTokens = sumTokens(attempts, TokenType.PROMPT);
         int completionTokens = sumTokens(attempts, TokenType.COMPLETION);
         int totalTokens = sumTokens(attempts, TokenType.TOTAL);
@@ -157,6 +161,12 @@ class DeepSeekTextToSqlEvaluationTest {
                 .map(QueryTaskEntity::getId)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private List<QueryAttemptEntity> findAttempts(long taskId) {
+        return attemptMapper.selectList(Wrappers.<QueryAttemptEntity>lambdaQuery()
+                .eq(QueryAttemptEntity::getTaskId, taskId)
+                .orderByAsc(QueryAttemptEntity::getAttemptNo));
     }
 
     private int sumTokens(List<QueryAttemptEntity> attempts, TokenType tokenType) {

@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** 使用临时只读连接池执行 EXPLAIN 和最终查询，调用结束立即释放连接。 */
+/** 使用临时只读连接池执行查询，调用结束立即释放连接。 */
 @Component
 @RequiredArgsConstructor
 public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
@@ -30,16 +30,7 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
     private final TemporaryMysqlDataSourceFactory dataSourceFactory;
     private final Map<Long, Statement> activeStatements = new ConcurrentHashMap<>();
 
-    /** 执行不需要取消跟踪的只读查询。 */
-    @Override
-    public QueryExecutionResult execute(
-            DatasourceConnectionInfo connectionInfo,
-            String sql,
-            int maxRows) {
-        return execute(connectionInfo, sql, maxRows, 0L);
-    }
-
-    /** 先 EXPLAIN 再执行 SQL，并注册任务 Statement 以支持取消。 */
+    /** 执行只读 SQL，并注册任务 Statement 以支持取消。 */
     @Override
     public QueryExecutionResult execute(
             DatasourceConnectionInfo connectionInfo,
@@ -49,7 +40,6 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
         try (HikariDataSource dataSource = dataSourceFactory.create(connectionInfo);
              Connection connection = dataSource.getConnection()) {
             connection.setReadOnly(true);
-            explain(connection, sql, taskId);
             return query(connection, sql, maxRows, taskId);
         } catch (SQLException | RuntimeException exception) {
             if (exception instanceof AppException appException) {
@@ -71,21 +61,6 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
             statement.cancel();
         } catch (SQLException ignored) {
             // 取消是尽力而为，原查询线程仍会通过超时和只读账号收敛。
-        }
-    }
-
-    private void explain(Connection connection, String sql, long taskId) throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            register(taskId, statement);
-            try {
-                statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
-                statement.setMaxRows(1);
-                try (ResultSet ignored = statement.executeQuery("EXPLAIN " + sql)) {
-                    // 成功获得 ResultSet 即代表数据库能够解析并规划该查询。
-                }
-            } finally {
-                unregister(taskId, statement);
-            }
         }
     }
 

@@ -28,19 +28,16 @@ import static org.mockito.Mockito.when;
 class MysqlReadOnlyQueryExecutorTest {
 
     @Test
-    void shouldExplainAndExecuteWithHardLimits() throws Exception {
+    void shouldExecuteWithHardLimits() throws Exception {
         TemporaryMysqlDataSourceFactory factory = mock(TemporaryMysqlDataSourceFactory.class);
         HikariDataSource dataSource = mock(HikariDataSource.class);
         Connection connection = mock(Connection.class);
-        Statement explainStatement = mock(Statement.class);
         Statement queryStatement = mock(Statement.class);
-        ResultSet explainResult = mock(ResultSet.class);
         ResultSet queryResult = mock(ResultSet.class);
         ResultSetMetaData metadata = mock(ResultSetMetaData.class);
         when(factory.create(any())).thenReturn(dataSource);
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.createStatement()).thenReturn(explainStatement, queryStatement);
-        when(explainStatement.executeQuery(any())).thenReturn(explainResult);
+        when(connection.createStatement()).thenReturn(queryStatement);
         when(queryStatement.executeQuery(any())).thenReturn(queryResult);
         when(queryResult.getMetaData()).thenReturn(metadata);
         when(metadata.getColumnCount()).thenReturn(2);
@@ -52,7 +49,7 @@ class MysqlReadOnlyQueryExecutorTest {
 
         MysqlReadOnlyQueryExecutor executor = new MysqlReadOnlyQueryExecutor(factory);
         QueryExecutionResult result = executor.execute(connectionInfo(),
-                "SELECT name AS product_name, price AS sales_amount FROM products LIMIT 100", 100);
+                "SELECT name AS product_name, price AS sales_amount FROM products LIMIT 100", 100, 1L);
 
         assertThat(result.columns()).containsExactly("product_name", "sales_amount");
         assertThat(result.rows()).singleElement().satisfies(row -> {
@@ -60,9 +57,6 @@ class MysqlReadOnlyQueryExecutorTest {
             assertThat(row).containsEntry("sales_amount", new BigDecimal("999.00"));
         });
         verify(connection).setReadOnly(true);
-        verify(explainStatement).setQueryTimeout(5);
-        verify(explainStatement).executeQuery(
-                "EXPLAIN SELECT name AS product_name, price AS sales_amount FROM products LIMIT 100");
         verify(queryStatement).setQueryTimeout(5);
         verify(queryStatement).setMaxRows(100);
     }
@@ -76,7 +70,7 @@ class MysqlReadOnlyQueryExecutorTest {
                 "jdbc:mysql://secret-host failed for secret-user", "08001"));
         MysqlReadOnlyQueryExecutor executor = new MysqlReadOnlyQueryExecutor(factory);
 
-        assertThatThrownBy(() -> executor.execute(connectionInfo(), "SELECT 1", 100))
+        assertThatThrownBy(() -> executor.execute(connectionInfo(), "SELECT 1", 100, 1L))
                 .isInstanceOfSatisfying(AppException.class, exception -> {
                     assertThat(exception.getResponseCode()).isEqualTo(
                             ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED);
@@ -92,17 +86,14 @@ class MysqlReadOnlyQueryExecutorTest {
         TemporaryMysqlDataSourceFactory factory = mock(TemporaryMysqlDataSourceFactory.class);
         HikariDataSource dataSource = mock(HikariDataSource.class);
         Connection connection = mock(Connection.class);
-        Statement explainStatement = mock(Statement.class);
         Statement queryStatement = mock(Statement.class);
-        ResultSet explainResult = mock(ResultSet.class);
         ResultSet queryResult = mock(ResultSet.class);
         ResultSetMetaData metadata = mock(ResultSetMetaData.class);
         CountDownLatch queryStarted = new CountDownLatch(1);
         CountDownLatch cancelled = new CountDownLatch(1);
         when(factory.create(any())).thenReturn(dataSource);
         when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.createStatement()).thenReturn(explainStatement, queryStatement);
-        when(explainStatement.executeQuery(any())).thenReturn(explainResult);
+        when(connection.createStatement()).thenReturn(queryStatement);
         when(queryStatement.executeQuery(any())).thenAnswer(ignored -> {
             queryStarted.countDown();
             cancelled.await(5, TimeUnit.SECONDS);

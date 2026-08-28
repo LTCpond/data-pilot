@@ -61,10 +61,4 @@ public class QueryTaskStore {
         return attempt;
     }
 
-    /** 按调用顺序返回任务的模型尝试，供内部评测汇总使用。 */
-    public List<QueryAttemptEntity> findAttempts(long taskId) {
-        return attemptMapper.selectList(Wrappers.<QueryAttemptEntity>lambdaQuery()
-                .eq(QueryAttemptEntity::getTaskId, taskId)
-                .orderByAsc(QueryAttemptEntity::getAttemptNo));
-    }
 }
