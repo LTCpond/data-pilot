@@ -78,30 +78,43 @@ public class QueryService {
     public QueryResultView executeTask(long taskId) {
         QueryTaskEntity task = taskStore.findTask(taskId)
                 .orElseThrow(() -> new AppException(ResponseCode.QUERY_TASK_NOT_FOUND));
+        // 确保任务是 CREATED 状态
         ensureCreatedOrCancel(task);
+        // 确认数据源存在且状态为 READY
         DatasourceEntity datasource = requiredReadyDatasource(task.getDatasourceId());
+
         int maxRows = task.getMaxRows();
+        // 获取数据源完整 Schema
         DatasourceSchemaView fullSchema = datasourceService.schema(task.getDatasourceId());
         if (fullSchema.tables().isEmpty()) {
             throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
         }
-
+        // 记录任务开始时间，用于计算总耗时
         Instant startedAt = Instant.now();
         try {
+            // 每次进入下一个状态前，检查任务是否被取消
             checkCancellation(task);
+            // 进入 SCHEMA_PREPARING 状态
             stateMachine.transition(task, QueryStatus.SCHEMA_PREPARING);
+            // 检索 Schema 并构建提示词
             SchemaRetrievalResult retrieval = schemaRetriever.retrieve(datasource, fullSchema, task.getQuestion());
             String schemaPrompt = schemaPromptBuilder.build(retrieval.schema());
             applyRetrieval(task, retrieval.view(), schemaPrompt.length());
             taskStore.updateTask(task);
+
             checkCancellation(task);
+            // 进入 SQL_GENERATING 状态
             stateMachine.transition(task, QueryStatus.SQL_GENERATING);
 
+            // 调用 AI 模型生成 SQL
             GenerationAttempt generation = generate(task.getQuestion(), schemaPrompt);
+
+            // 记录生成尝试次数，首次为 GENERATE，后续为 REPAIR
             int attemptNo = 1;
             while (true) {
                 checkCancellation(task);
                 applyGeneration(task, generation.result());
+                // 进入 SQL_VALIDATING 状态
                 stateMachine.transition(task, QueryStatus.SQL_VALIDATING);
 
                 if (!generation.result().answerable()) {
@@ -129,6 +142,7 @@ public class QueryService {
                 }
 
                 checkCancellation(task);
+                // 进入 SQL_EXECUTING 状态
                 stateMachine.transition(task, QueryStatus.SQL_EXECUTING);
                 try {
                     QueryExecutionResult execution = queryExecutor.execute(
@@ -138,6 +152,7 @@ public class QueryService {
                     return succeed(task, generation.result(), validation.executableSql(), execution,
                             startedAt, retrieval.view());
                 } catch (AppException exception) {
+                    // 出现异常，重新生成一次 SQL，若达到最大修复次数则失败
                     if (exception.getResponseCode() != ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED) {
                         throw exception;
                     }
@@ -158,6 +173,7 @@ public class QueryService {
                 }
             }
         } catch (AppException exception) {
+            // 根据异常类型设置任务失败状态
             switch (exception.getResponseCode()) {
                 case QUERY_RESULT_DELIVERY_FAILED -> failSafely(task, "RESULT_STORE_UNAVAILABLE", startedAt);
                 case AI_MODEL_UNAVAILABLE -> failSafely(task, "AI_MODEL_UNAVAILABLE", startedAt);

@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** 查询历史视图，刻意不包含已经返回过的业务数据行。 */
+/** 查询任务视图 */
 public record QueryTaskView(
         long id,
         long datasourceId,
