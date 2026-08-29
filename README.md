@@ -31,7 +31,6 @@ Data Pilot 是一个基于 Java 21、Spring Boot 和 Spring AI 构建的自然�
 - PostgreSQL 17、pgvector
 - Ollama、bge-m3
 - JSqlParser
-- Flyway
 - Maven
 - Docker Compose
 
@@ -136,7 +135,6 @@ POST /api/datasources/{id}/rag-index
 → 准备或检索 Schema
 → 调用模型生成结构化 SQL
 → JSqlParser 安全校验
-→ EXPLAIN 检查
 → 只读执行
 → 返回表格结果和解释
 ```

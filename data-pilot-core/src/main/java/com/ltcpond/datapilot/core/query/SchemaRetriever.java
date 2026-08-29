@@ -33,11 +33,13 @@ public class SchemaRetriever {
             DatasourceEntity datasource, DatasourceSchemaView fullSchema, String question) {
         Instant startedAt = Instant.now();
         int total = fullSchema.tables().size();
+        // 检查配置是否为全量，表是否过少
         if (!properties.isEnabled()
                 || properties.getMode() == RagProperties.Mode.FULL_SCHEMA
                 || total <= properties.getFullSchemaThreshold()) {
             return full(fullSchema, false, startedAt);
         }
+        // 检查向量索引是否可用，RAG 索引版本是否存在
         if (!vectorIndex.available()
                 || datasource.getRagIndexVersion() == null
                 || datasource.getRagIndexVersion().isBlank()) {
@@ -49,9 +51,12 @@ public class SchemaRetriever {
             List<SchemaVectorMatch> matches = vectorIndex.search(
                     datasource.getId(), datasource.getRagIndexVersion(), question, properties.getTopK());
             matches.forEach(match -> selected.add(normalize(match.tableName())));
+            // 如果用户的问题里明确提到了某个表，就算向量检索没有召回，也强制加进去。
             addDirectMentions(selected, fullSchema, question);
+            // 把已经选中的表的直接外键关联表也加入进来。
             addOneHopRelations(selected, fullSchema);
 
+            // 拿到最终的表列表，限制数量，构建返回结果
             List<SchemaTableView> promptTables = fullSchema.tables().stream()
                     .filter(table -> selected.contains(normalize(table.name())))
                     .limit(properties.getMaxPromptTables())
