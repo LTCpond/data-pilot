@@ -1,15 +1,14 @@
 package com.ltcpond.datapilot.core.query;
 
-/** 确定性 Text-to-SQL 工作流状态。 */
+/** 受控只读查询 Agent 工作流状态。 */
 public enum QueryStatus {
     CREATED,
-    SCHEMA_PREPARING,
-    SQL_GENERATING,
-    SQL_VALIDATING,
-    SQL_REPAIRING,
-    SQL_EXECUTING,
+    AGENT_ROUTING,
+    AGENT_RUNNING,
+    AGENT_FINALIZING,
     CANCEL_REQUESTED,
     CANCELLED,
+    NEEDS_CLARIFICATION,
     SUCCEEDED,
     FAILED
 }

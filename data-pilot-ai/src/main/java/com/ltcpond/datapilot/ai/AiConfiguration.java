@@ -11,11 +11,19 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(DataPilotAiProperties.class)
 public class AiConfiguration {
 
-    /** 创建 SQL 生成器适配器；未注入 ChatModel 时由运行时可用性检查返回稳定错误。 */
+    /** 保留旧生成器供离线评测使用；在线查询由 QueryAgentModel 驱动。 */
     @Bean
     public SqlGenerator sqlGenerator(
             DataPilotAiProperties properties,
             ObjectProvider<ChatModel> chatModelProvider) {
         return new SpringAiSqlGenerator(properties, chatModelProvider.getIfAvailable());
+    }
+
+    /** 创建受控 Agent 模型适配器；工具调用由核心模块执行。 */
+    @Bean
+    public QueryAgentModel queryAgentModel(
+            DataPilotAiProperties properties,
+            ObjectProvider<ChatModel> chatModelProvider) {
+        return new SpringAiQueryAgentModel(properties, chatModelProvider.getIfAvailable());
     }
 }

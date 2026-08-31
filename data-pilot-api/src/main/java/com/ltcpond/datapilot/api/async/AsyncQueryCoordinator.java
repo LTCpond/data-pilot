@@ -65,6 +65,7 @@ public class AsyncQueryCoordinator {
 
     private AsyncQueryResultView view(QueryTaskView task, QueryResultView result) {
         return new AsyncQueryResultView(
-                task.id(), task.status(), task.errorCode(), task.resultExpiresAt(), result);
+                task.id(), task.status(), task.errorCode(), task.clarificationQuestion(),
+                task.resultExpiresAt(), result);
     }
 }

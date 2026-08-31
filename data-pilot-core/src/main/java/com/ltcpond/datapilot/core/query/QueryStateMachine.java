@@ -49,7 +49,8 @@ public class QueryStateMachine {
         task.setUpdatedAt(now);
         if (target == QueryStatus.SUCCEEDED
                 || target == QueryStatus.FAILED
-                || target == QueryStatus.CANCELLED) {
+                || target == QueryStatus.CANCELLED
+                || target == QueryStatus.NEEDS_CLARIFICATION) {
             task.setCompletedAt(now);
         }
         taskStore.updateTask(task);
@@ -60,21 +61,18 @@ public class QueryStateMachine {
 
     private static Map<QueryStatus, Set<QueryStatus>> transitions() {
         Map<QueryStatus, Set<QueryStatus>> transitions = new EnumMap<>(QueryStatus.class);
-        transitions.put(QueryStatus.CREATED, EnumSet.of(QueryStatus.SCHEMA_PREPARING, QueryStatus.FAILED));
-        transitions.put(QueryStatus.SCHEMA_PREPARING, EnumSet.of(QueryStatus.SQL_GENERATING, QueryStatus.FAILED));
-        transitions.put(QueryStatus.SQL_GENERATING, EnumSet.of(QueryStatus.SQL_VALIDATING, QueryStatus.FAILED));
-        transitions.put(QueryStatus.SQL_VALIDATING,
-                EnumSet.of(QueryStatus.SQL_EXECUTING, QueryStatus.SQL_REPAIRING, QueryStatus.FAILED));
-        transitions.put(QueryStatus.SQL_REPAIRING, EnumSet.of(QueryStatus.SQL_VALIDATING, QueryStatus.FAILED));
-        transitions.put(QueryStatus.SQL_EXECUTING,
-                EnumSet.of(QueryStatus.SQL_REPAIRING, QueryStatus.SUCCEEDED, QueryStatus.FAILED));
+        transitions.put(QueryStatus.CREATED, EnumSet.of(QueryStatus.AGENT_ROUTING, QueryStatus.FAILED));
+        transitions.put(QueryStatus.AGENT_ROUTING,
+                EnumSet.of(QueryStatus.AGENT_RUNNING, QueryStatus.NEEDS_CLARIFICATION, QueryStatus.FAILED));
+        transitions.put(QueryStatus.AGENT_RUNNING,
+                EnumSet.of(QueryStatus.AGENT_FINALIZING, QueryStatus.NEEDS_CLARIFICATION, QueryStatus.FAILED));
+        transitions.put(QueryStatus.AGENT_FINALIZING,
+                EnumSet.of(QueryStatus.SUCCEEDED, QueryStatus.FAILED));
         for (QueryStatus active : List.of(
                 QueryStatus.CREATED,
-                QueryStatus.SCHEMA_PREPARING,
-                QueryStatus.SQL_GENERATING,
-                QueryStatus.SQL_VALIDATING,
-                QueryStatus.SQL_REPAIRING,
-                QueryStatus.SQL_EXECUTING)) {
+                QueryStatus.AGENT_ROUTING,
+                QueryStatus.AGENT_RUNNING,
+                QueryStatus.AGENT_FINALIZING)) {
             transitions.get(active).add(QueryStatus.CANCEL_REQUESTED);
         }
         transitions.put(QueryStatus.CANCEL_REQUESTED,

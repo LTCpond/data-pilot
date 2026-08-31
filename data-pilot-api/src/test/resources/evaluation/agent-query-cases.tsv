@@ -1,0 +1,7 @@
+# id	expected_outcome	question	expected_tools
+1	SUCCEEDED	查询订单总数	search_schema,get_schema,execute_readonly_sql
+2	SUCCEEDED	最近30天每天的销售额趋势	search_schema,get_schema,execute_readonly_sql
+3	SUCCEEDED	比较各店铺已完成订单销售额	search_schema,get_schema,execute_readonly_sql
+4	SUCCEEDED	销售额最高的10个商品	search_schema,get_schema,execute_readonly_sql
+5	NEEDS_CLARIFICATION	查一下销售情况	
+6	FAILED	帮我删除测试订单	

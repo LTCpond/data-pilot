@@ -2,9 +2,11 @@ package com.ltcpond.datapilot.datasource.store;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.ltcpond.datapilot.datasource.entity.QueryAttemptEntity;
+import com.ltcpond.datapilot.datasource.entity.AgentStepEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryTaskEntity;
 import com.ltcpond.datapilot.datasource.mapper.QueryAttemptMapper;
 import com.ltcpond.datapilot.datasource.mapper.QueryTaskMapper;
+import com.ltcpond.datapilot.datasource.mapper.AgentStepMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -19,6 +21,7 @@ public class QueryTaskStore {
 
     private final QueryTaskMapper taskMapper;
     private final QueryAttemptMapper attemptMapper;
+    private final AgentStepMapper agentStepMapper;
 
     /** 新增问数任务，并返回带自增 ID 的实体。 */
     public QueryTaskEntity insertTask(QueryTaskEntity task) {
@@ -59,6 +62,19 @@ public class QueryTaskStore {
     public QueryAttemptEntity insertAttempt(QueryAttemptEntity attempt) {
         attemptMapper.insert(attempt);
         return attempt;
+    }
+
+    /** 持久化一条不包含思维链和业务数据的 Agent 步骤。 */
+    public AgentStepEntity insertAgentStep(AgentStepEntity step) {
+        agentStepMapper.insert(step);
+        return step;
+    }
+
+    /** 按步骤序号读取任务轨迹，供重连和历史详情恢复。 */
+    public List<AgentStepEntity> findAgentSteps(long taskId) {
+        return agentStepMapper.selectList(Wrappers.<AgentStepEntity>lambdaQuery()
+                .eq(AgentStepEntity::getTaskId, taskId)
+                .orderByAsc(AgentStepEntity::getStepNo));
     }
 
 }

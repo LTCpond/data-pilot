@@ -3,6 +3,7 @@ package com.ltcpond.datapilot.api.controller;
 import com.ltcpond.datapilot.common.api.ApiResponse;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.core.query.QueryTaskView;
+import com.ltcpond.datapilot.core.query.AgentStepView;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,6 +22,12 @@ public class QueryController {
     @GetMapping("/api/queries/{queryId}")
     public ApiResponse<QueryTaskView> get(@PathVariable long queryId) {
         return ApiResponse.success(queryService.get(queryId));
+    }
+
+    /** 返回按序持久化的安全 Agent 轨迹。 */
+    @GetMapping("/api/queries/{queryId}/steps")
+    public ApiResponse<List<AgentStepView>> steps(@PathVariable long queryId) {
+        return ApiResponse.success(queryService.steps(queryId));
     }
 
     /** 返回某个数据源最近的问数任务列表。 */

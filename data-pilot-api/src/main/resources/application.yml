@@ -57,6 +57,12 @@ data-pilot:
     maximum-repair-attempts: 2
     default-max-rows: 100
     absolute-max-rows: 200
+    maximum-agent-turns: 8
+    maximum-total-tool-failures: 4
+    maximum-same-failure: 3
+    tool-observation-max-rows: 20
+    tool-observation-max-chars: 8000
+    agent-timeout: 120s
   rag:
     enabled: ${DATA_PILOT_RAG_ENABLED:true}
     mode: ${DATA_PILOT_RAG_MODE:AUTO}

@@ -4,6 +4,7 @@ import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.core.query.QueryStatus;
 import com.ltcpond.datapilot.core.query.QueryStatusEvent;
 import com.ltcpond.datapilot.core.query.QueryTaskView;
+import com.ltcpond.datapilot.core.query.AgentStepEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class QuerySseService {
         emitter.onCompletion(() -> remove(queryId, emitter));
         emitter.onTimeout(() -> remove(queryId, emitter));
         emitter.onError(ignored -> remove(queryId, emitter));
+        send(queryId, emitter, queryService.steps(queryId), "agent-snapshot");
         send(queryId, emitter, taskStatus(task), "query-snapshot");
         if (terminal(task.status())) {
             emitter.complete();
@@ -48,6 +50,13 @@ public class QuerySseService {
             if (terminal(event.status())) {
                 emitter.complete();
             }
+        }
+    }
+
+    /** 广播新持久化的 Agent 步骤；断线客户端可通过快照补齐。 */
+    public void publish(AgentStepEvent event) {
+        for (SseEmitter emitter : emitters.getOrDefault(event.queryId(), new CopyOnWriteArrayList<>())) {
+            send(event.queryId(), emitter, event.step(), "agent-step");
         }
     }
 
@@ -89,6 +98,7 @@ public class QuerySseService {
     private boolean terminal(String status) {
         return QueryStatus.SUCCEEDED.name().equals(status)
                 || QueryStatus.FAILED.name().equals(status)
-                || QueryStatus.CANCELLED.name().equals(status);
+                || QueryStatus.CANCELLED.name().equals(status)
+                || QueryStatus.NEEDS_CLARIFICATION.name().equals(status);
     }
 }

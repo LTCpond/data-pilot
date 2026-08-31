@@ -19,6 +19,7 @@ public record QueryTaskView(
         Integer rowCount,
         Long durationMs,
         String errorCode,
+        String clarificationQuestion,
         RetrievalView retrieval,
         LocalDateTime createdAt,
         LocalDateTime completedAt,

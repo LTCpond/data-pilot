@@ -1,6 +1,7 @@
 package com.ltcpond.datapilot.api.async;
 
 import com.ltcpond.datapilot.core.query.QueryStatusEvent;
+import com.ltcpond.datapilot.core.query.AgentStepEvent;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 public class AsyncQueryConfiguration {
 
     static final String EVENT_CHANNEL = "data-pilot:query:events";
+    static final String AGENT_EVENT_CHANNEL = "data-pilot:query:agent-events";
 
     @Bean(name = "queryTaskExecutor")
     ThreadPoolTaskExecutor queryTaskExecutor(AsyncQueryProperties properties) {
@@ -48,6 +50,14 @@ public class AsyncQueryConfiguration {
                 // 非法或不兼容事件只在当前订阅者丢弃，不影响任务主流程。
             }
         }, new ChannelTopic(EVENT_CHANNEL));
+        container.addMessageListener((message, pattern) -> {
+            try {
+                String json = new String(message.getBody(), StandardCharsets.UTF_8);
+                sseService.publish(objectMapper.readValue(json, AgentStepEvent.class));
+            } catch (Exception ignored) {
+                // 不兼容轨迹事件只在当前订阅者丢弃。
+            }
+        }, new ChannelTopic(AGENT_EVENT_CHANNEL));
         return container;
     }
 }

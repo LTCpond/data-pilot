@@ -50,7 +50,7 @@ public class AsyncQueryController {
     public ResponseEntity<ApiResponse<AsyncQueryResultView>> result(@PathVariable long queryId) {
         AsyncQueryResultView result = coordinator.result(queryId);
         HttpStatus status = switch (QueryStatus.valueOf(result.status())) {
-            case SUCCEEDED, FAILED, CANCELLED -> HttpStatus.OK;
+            case SUCCEEDED, FAILED, CANCELLED, NEEDS_CLARIFICATION -> HttpStatus.OK;
             default -> HttpStatus.ACCEPTED;
         };
         return ResponseEntity.status(status).body(ApiResponse.success(result));

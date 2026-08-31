@@ -74,7 +74,7 @@ class MysqlReadOnlyQueryExecutorTest {
                 .isInstanceOfSatisfying(AppException.class, exception -> {
                     assertThat(exception.getResponseCode()).isEqualTo(
                             ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED);
-                    assertThat(exception.getDetailCode()).isEqualTo("CONNECTION_FAILED");
+                    assertThat(exception.getDetailCode()).isEqualTo("CONNECTION_ERROR");
                     assertThat(exception.getMessage())
                             .doesNotContain("secret-host")
                             .doesNotContain("secret-user");

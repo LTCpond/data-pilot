@@ -30,6 +30,7 @@ public class QueryTaskEntity {
     private Integer rowCount;
     private Long durationMs;
     private String errorCode;
+    private String clarificationQuestion;
     private Boolean ragUsed;
     private Boolean ragFallback;
     private Integer schemaTableCount;

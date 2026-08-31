@@ -6,6 +6,7 @@ import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.core.query.QueryTaskView;
+import com.ltcpond.datapilot.core.query.AgentStepView;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -47,6 +48,20 @@ class QueryControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void shouldReturnPersistedAgentSteps() throws Exception {
+        QueryService service = mock(QueryService.class);
+        LocalDateTime now = LocalDateTime.now();
+        when(service.steps(9L)).thenReturn(List.of(new AgentStepView(
+                1L, 9L, 1, "INTENT", null, "SUCCEEDED", "识别意图：FETCH",
+                null, 3L, 10, 5, now, now)));
+
+        mockMvc(service).perform(get("/api/queries/9/steps"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].stepNo").value(1))
+                .andExpect(jsonPath("$.data[0].summary").value("识别意图：FETCH"));
+    }
+
     private MockMvc mockMvc(QueryService service) {
         return standaloneSetup(new QueryController(service))
                 .setControllerAdvice(new ApiExceptionHandler())
@@ -58,6 +73,6 @@ class QueryControllerTest {
         return new QueryTaskView(
                 9L, 1L, "查询订单数量", "SUCCEEDED", null, List.of("orders"),
                 "SELECT COUNT(*) FROM orders", null, null, 0, 1, 120L,
-                null, null, now, now, null);
+                null, null, null, now, now, null);
     }
 }

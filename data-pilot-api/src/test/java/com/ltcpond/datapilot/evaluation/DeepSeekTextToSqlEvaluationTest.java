@@ -1,19 +1,17 @@
 package com.ltcpond.datapilot.evaluation;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.ltcpond.datapilot.DataPilotApplication;
 import com.ltcpond.datapilot.core.query.QueryCommand;
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.query.QueryResultView;
 import com.ltcpond.datapilot.core.query.QueryTaskView;
+import com.ltcpond.datapilot.core.query.AgentStepView;
 import com.ltcpond.datapilot.core.query.QueryService;
 import com.ltcpond.datapilot.datasource.connection.DatasourceConnectionInfo;
 import com.ltcpond.datapilot.datasource.crypto.CredentialCipher;
 import com.ltcpond.datapilot.datasource.entity.DatasourceEntity;
-import com.ltcpond.datapilot.datasource.entity.QueryAttemptEntity;
 import com.ltcpond.datapilot.datasource.entity.QueryTaskEntity;
-import com.ltcpond.datapilot.datasource.mapper.QueryAttemptMapper;
 import com.ltcpond.datapilot.datasource.query.QueryExecutionResult;
 import com.ltcpond.datapilot.datasource.query.ReadOnlyQueryExecutor;
 import com.ltcpond.datapilot.datasource.store.DatasourceStore;
@@ -55,8 +53,6 @@ class DeepSeekTextToSqlEvaluationTest {
     private DatasourceStore datasourceStore;
     @Autowired
     private QueryTaskStore taskStore;
-    @Autowired
-    private QueryAttemptMapper attemptMapper;
     @Autowired
     private CredentialCipher credentialCipher;
     @Autowired
@@ -102,20 +98,28 @@ class DeepSeekTextToSqlEvaluationTest {
             QueryTaskView task = queryService.createTask(
                     new QueryCommand(datasourceId, evaluationCase.question(), 200));
             QueryResultView generated = queryService.executeTask(task.id());
-            taskId = generated.queryId();
-            retrieval = generated.retrieval();
-            if (evaluationCase.comparison() == Comparison.REJECTED) {
-                detail = "expected rejection but SQL executed";
+            taskId = task.id();
+            if (generated == null) {
+                QueryTaskView terminal = queryService.get(task.id());
+                passed = evaluationCase.comparison() == Comparison.REJECTED
+                        && "NEEDS_CLARIFICATION".equals(terminal.status());
+                detail = passed ? "clarification requested" : "unexpected empty result";
             } else {
-                QueryExecutionResult expected = queryExecutor.execute(
-                        connection, evaluationCase.referenceSql(), 200, task.id());
-                passed = resultComparator.compare(
-                        evaluationCase.comparison().name(), generated.rows(), expected.rows());
-                detail = passed ? "matched" : "result mismatch";
+                retrieval = generated.retrieval();
+                if (evaluationCase.comparison() == Comparison.REJECTED) {
+                    detail = "expected rejection but SQL executed";
+                } else {
+                    QueryExecutionResult expected = queryExecutor.execute(
+                            connection, evaluationCase.referenceSql(), 200, task.id());
+                    passed = resultComparator.compare(
+                            evaluationCase.comparison().name(), generated.rows(), expected.rows());
+                    detail = passed ? "matched" : "result mismatch";
+                }
             }
         } catch (AppException exception) {
             taskId = newestTaskId(datasourceId, evaluationCase.question());
-            if (exception.getResponseCode() == ResponseCode.QUERY_REJECTED) {
+            if (exception.getResponseCode() == ResponseCode.QUERY_REJECTED
+                    || exception.getResponseCode() == ResponseCode.READ_ONLY_QUERY_EXECUTION_FAILED) {
                 passed = evaluationCase.comparison() == Comparison.REJECTED;
                 detail = passed ? "safely rejected" : "unexpected rejection";
             } else {
@@ -136,10 +140,12 @@ class DeepSeekTextToSqlEvaluationTest {
                     splitTables(task.getRetrievedTables()),
                     task.getRetrievalDurationMs() == null ? 0L : task.getRetrievalDurationMs());
         }
-        List<QueryAttemptEntity> attempts = taskId == null ? List.of() : findAttempts(taskId);
-        int promptTokens = sumTokens(attempts, TokenType.PROMPT);
-        int completionTokens = sumTokens(attempts, TokenType.COMPLETION);
-        int totalTokens = sumTokens(attempts, TokenType.TOTAL);
+        List<AgentStepView> agentSteps = taskId == null ? List.of() : queryService.steps(taskId);
+        int promptTokens = agentSteps.stream().map(AgentStepView::promptTokens)
+                .filter(java.util.Objects::nonNull).mapToInt(Integer::intValue).sum();
+        int completionTokens = agentSteps.stream().map(AgentStepView::completionTokens)
+                .filter(java.util.Objects::nonNull).mapToInt(Integer::intValue).sum();
+        int totalTokens = promptTokens + completionTokens;
         int repairs = task == null || task.getRepairCount() == null ? 0 : task.getRepairCount();
         long durationMs = task != null && task.getDurationMs() != null
                 ? task.getDurationMs()
@@ -163,23 +169,6 @@ class DeepSeekTextToSqlEvaluationTest {
                 .orElse(null);
     }
 
-    private List<QueryAttemptEntity> findAttempts(long taskId) {
-        return attemptMapper.selectList(Wrappers.<QueryAttemptEntity>lambdaQuery()
-                .eq(QueryAttemptEntity::getTaskId, taskId)
-                .orderByAsc(QueryAttemptEntity::getAttemptNo));
-    }
-
-    private int sumTokens(List<QueryAttemptEntity> attempts, TokenType tokenType) {
-        return attempts.stream()
-                .map(attempt -> switch (tokenType) {
-                    case PROMPT -> attempt.getPromptTokens();
-                    case COMPLETION -> attempt.getCompletionTokens();
-                    case TOTAL -> attempt.getTotalTokens();
-                })
-                .filter(value -> value != null)
-                .mapToInt(Integer::intValue)
-                .sum();
-    }
 
     private EvaluationSummary summarize(List<CaseResult> results) {
         int passed = (int) results.stream().filter(CaseResult::passed).count();
@@ -239,7 +228,7 @@ class DeepSeekTextToSqlEvaluationTest {
 
     private String jsonReport(List<CaseResult> results, EvaluationSummary summary) {
         StringBuilder json = new StringBuilder();
-        json.append("{\n  \"promptVersion\": \"text-to-sql-v2\",")
+        json.append("{\n  \"promptVersion\": \"data-agent-v1\",")
                 .append("\n  \"model\": \"deepseek-v4-pro\",")
                 .append("\n  \"passed\": ").append(summary.passed()).append(',')
                 .append("\n  \"passRate\": ").append(decimal(summary.passRate())).append(',')
@@ -276,7 +265,7 @@ class DeepSeekTextToSqlEvaluationTest {
 
     private String markdownReport(List<CaseResult> results, EvaluationSummary summary) {
         StringBuilder markdown = new StringBuilder("# Data Pilot Text-to-SQL Evaluation\n\n");
-        markdown.append("- Prompt: `text-to-sql-v2`\n")
+        markdown.append("- Prompt: `data-agent-v1`\n")
                 .append("- 通过率: ").append(decimal(summary.passRate() * 100)).append("%\n")
                 .append("- 首次成功率: ").append(decimal(summary.firstPassRate() * 100)).append("%\n")
                 .append("- 纠错后通过数: ").append(summary.repairedPassCount()).append("\n")
@@ -328,10 +317,6 @@ class DeepSeekTextToSqlEvaluationTest {
 
     private enum Comparison {
         SCALAR, ORDERED_ROWS, UNORDERED_ROWS, EMPTY, REJECTED
-    }
-
-    private enum TokenType {
-        PROMPT, COMPLETION, TOTAL
     }
 
     private record EvaluationCase(

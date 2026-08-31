@@ -57,6 +57,6 @@ class AsyncQueryCoordinatorTest {
         return new QueryTaskView(
                 id, 1L, "查询订单", status, null, List.of(), null, null,
                 null, 0, null, null, null, null,
-                LocalDateTime.now(), null, null);
+                null, LocalDateTime.now(), null, null);
     }
 }

@@ -51,16 +51,21 @@ class AsyncQueryControllerTest {
     void shouldReturnAcceptedWhileResultIsRunningAndOkWhenFailed() throws Exception {
         AsyncQueryCoordinator coordinator = mock(AsyncQueryCoordinator.class);
         when(coordinator.result(9L)).thenReturn(new AsyncQueryResultView(
-                9L, "SQL_GENERATING", null, null, null));
+                9L, "AGENT_RUNNING", null, null, null, null));
         when(coordinator.result(10L)).thenReturn(new AsyncQueryResultView(
-                10L, "FAILED", "AI_MODEL_UNAVAILABLE", null, null));
+                10L, "FAILED", "AI_MODEL_UNAVAILABLE", null, null, null));
+        when(coordinator.result(12L)).thenReturn(new AsyncQueryResultView(
+                12L, "NEEDS_CLARIFICATION", null, "要查询哪个时间范围？", null, null));
 
         mockMvc(coordinator).perform(get("/api/queries/9/result"))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.data.status").value("SQL_GENERATING"));
+                .andExpect(jsonPath("$.data.status").value("AGENT_RUNNING"));
         mockMvc(coordinator).perform(get("/api/queries/10/result"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.errorCode").value("AI_MODEL_UNAVAILABLE"));
+        mockMvc(coordinator).perform(get("/api/queries/12/result"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.clarificationQuestion").value("要查询哪个时间范围？"));
     }
 
     @Test

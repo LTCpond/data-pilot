@@ -31,6 +31,15 @@ public class SchemaRetriever {
     /** 根据 RAG 配置选择全量 Schema 或向量召回后的精简 Schema。 */
     public SchemaRetrievalResult retrieve(
             DatasourceEntity datasource, DatasourceSchemaView fullSchema, String question) {
+        return retrieve(datasource, fullSchema, question, properties.getTopK());
+    }
+
+    /** 允许 Agent 在配置上限内缩小召回数量，不能突破服务端边界。 */
+    public SchemaRetrievalResult retrieve(
+            DatasourceEntity datasource,
+            DatasourceSchemaView fullSchema,
+            String question,
+            Integer requestedTopK) {
         Instant startedAt = Instant.now();
         int total = fullSchema.tables().size();
         // 检查配置是否为全量，表是否过少
@@ -48,8 +57,11 @@ public class SchemaRetriever {
 
         try {
             LinkedHashSet<String> selected = new LinkedHashSet<>();
+            int topK = requestedTopK == null
+                    ? properties.getTopK()
+                    : Math.max(1, Math.min(requestedTopK, properties.getTopK()));
             List<SchemaVectorMatch> matches = vectorIndex.search(
-                    datasource.getId(), datasource.getRagIndexVersion(), question, properties.getTopK());
+                    datasource.getId(), datasource.getRagIndexVersion(), question, topK);
             matches.forEach(match -> selected.add(normalize(match.tableName())));
             // 如果用户的问题里明确提到了某个表，就算向量检索没有召回，也强制加进去。
             addDirectMentions(selected, fullSchema, question);

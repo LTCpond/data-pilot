@@ -121,18 +121,35 @@ public class MysqlReadOnlyQueryExecutor implements ReadOnlyQueryExecutor {
         while (current != null) {
             if (current instanceof SQLException sqlException) {
                 String sqlState = sqlException.getSQLState();
-                if (sqlState != null && sqlState.startsWith("42")) {
-                    return "INVALID_SQL";
+                int vendorCode = sqlException.getErrorCode();
+                if (vendorCode == 1044 || vendorCode == 1045 || vendorCode == 1142
+                        || vendorCode == 1143 || vendorCode == 1227) {
+                    return "PERMISSION_DENIED";
+                }
+                if (vendorCode == 1054) {
+                    return "UNKNOWN_COLUMN";
+                }
+                if (vendorCode == 1146) {
+                    return "UNKNOWN_TABLE";
+                }
+                if (vendorCode == 1064 || (sqlState != null && sqlState.startsWith("42"))) {
+                    return "SYNTAX_ERROR";
                 }
                 if (sqlState != null && sqlState.startsWith("08")) {
-                    return "CONNECTION_FAILED";
+                    return "CONNECTION_ERROR";
                 }
                 if (sqlState != null && (sqlState.startsWith("HYT") || sqlState.equals("70100"))) {
                     return "QUERY_TIMEOUT";
                 }
+                if (sqlState != null && sqlState.startsWith("28")) {
+                    return "PERMISSION_DENIED";
+                }
+                if (sqlState != null && sqlState.startsWith("40")) {
+                    return "TRANSIENT_ERROR";
+                }
             }
             current = current.getCause();
         }
-        return "QUERY_EXECUTION_FAILED";
+        return "OTHER";
     }
 }

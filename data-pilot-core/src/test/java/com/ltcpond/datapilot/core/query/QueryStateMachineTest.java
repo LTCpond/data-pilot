@@ -18,13 +18,13 @@ class QueryStateMachineTest {
         QueryStateMachine machine = new QueryStateMachine(store, publisher);
         QueryTaskEntity task = task("CREATED");
 
-        machine.transition(task, QueryStatus.SCHEMA_PREPARING);
+        machine.transition(task, QueryStatus.AGENT_ROUTING);
 
         verify(store).updateTask(task);
         ArgumentCaptor<QueryStatusEvent> event = ArgumentCaptor.forClass(QueryStatusEvent.class);
         verify(publisher).publish(event.capture());
         assertThat(event.getValue().queryId()).isEqualTo(8L);
-        assertThat(event.getValue().status()).isEqualTo("SCHEMA_PREPARING");
+        assertThat(event.getValue().status()).isEqualTo("AGENT_ROUTING");
         assertThat(event.getValue().resultAvailable()).isFalse();
     }
 
@@ -32,13 +32,25 @@ class QueryStateMachineTest {
     void shouldReachCancelledTerminalState() {
         QueryStateMachine machine = new QueryStateMachine(
                 mock(QueryTaskStore.class), mock(QueryEventPublisher.class));
-        QueryTaskEntity task = task("SQL_EXECUTING");
+        QueryTaskEntity task = task("AGENT_RUNNING");
 
         machine.transition(task, QueryStatus.CANCEL_REQUESTED);
         machine.transition(task, QueryStatus.CANCELLED);
 
         assertThat(task.getStatus()).isEqualTo("CANCELLED");
         assertThat(task.getCompletedAt()).isNotNull();
+    }
+
+    @Test
+    void shouldTreatClarificationAsCompletedTerminalState() {
+        QueryStateMachine machine = new QueryStateMachine(
+                mock(QueryTaskStore.class), mock(QueryEventPublisher.class));
+        QueryTaskEntity task = task("AGENT_ROUTING");
+
+        machine.transition(task, QueryStatus.NEEDS_CLARIFICATION);
+
+        assertThat(task.getCompletedAt()).isNotNull();
+        assertThat(task.getStatus()).isEqualTo("NEEDS_CLARIFICATION");
     }
 
     private QueryTaskEntity task(String status) {

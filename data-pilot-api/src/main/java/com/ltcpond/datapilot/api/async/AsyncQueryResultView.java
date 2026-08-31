@@ -9,6 +9,7 @@ public record AsyncQueryResultView(
         long queryId,
         String status,
         String errorCode,
+        String clarificationQuestion,
         LocalDateTime resultExpiresAt,
         QueryResultView result) {
 }
