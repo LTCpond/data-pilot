@@ -111,7 +111,7 @@ class ReadOnlyQueryAgentTest {
     @Test
     void shouldExecuteBoundedToolLoopAndUseOnlySuccessfulSqlResult() {
         script(
-                intent("FETCH"),
+                intent("QUERY"),
                 tool("search_schema", null),
                 tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
                 answer());
@@ -148,7 +148,7 @@ class ReadOnlyQueryAgentTest {
     @Test
     void shouldRepairAfterClassifiedExecutionFailure() {
         script(
-                intent("FETCH"),
+                intent("QUERY"),
                 tool("search_schema", null),
                 tool("execute_readonly_sql", "SELECT missing FROM orders"),
                 tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
@@ -180,7 +180,7 @@ class ReadOnlyQueryAgentTest {
         when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
                 .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
         script(
-                intent("FETCH"),
+                intent("QUERY"),
                 searchTool("订单支付"),
                 searchTool("退款与订单关联"),
                 tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
@@ -208,7 +208,7 @@ class ReadOnlyQueryAgentTest {
         when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
                 .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
         script(
-                intent("FETCH"),
+                intent("QUERY"),
                 searchTool("订单"),
                 searchTool("订单统计"),
                 tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
@@ -229,7 +229,7 @@ class ReadOnlyQueryAgentTest {
     void shouldRejectInvalidRetrievalQueriesAndAllowCorrection() {
         String tooLong = "查".repeat(1_001);
         script(
-                intent("FETCH"),
+                intent("QUERY"),
                 searchTool(" "),
                 searchTool(tooLong),
                 searchTool(task.getQuestion()),
@@ -258,7 +258,7 @@ class ReadOnlyQueryAgentTest {
         when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
                 .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
         script(
-                intent("FETCH"),
+                intent("QUERY"),
                 searchTool("订单"),
                 searchTool("退款"),
                 tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
@@ -277,7 +277,7 @@ class ReadOnlyQueryAgentTest {
     @Test
     void shouldStopAfterThirdIdenticalToolFailure() {
         script(
-                intent("FETCH"),
+                intent("QUERY"),
                 tool("execute_readonly_sql", "SELECT 1"),
                 tool("execute_readonly_sql", "SELECT 1"),
                 tool("execute_readonly_sql", "SELECT 1"));

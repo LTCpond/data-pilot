@@ -10,7 +10,7 @@ Data Pilot 是一个基于 Java 21、Spring Boot 和 Spring AI 构建的自然�
 - AES-256-GCM 加密保存数据源密码
 - 同步表、字段、主键、外键和中文注释
 - 使用 Spring AI 2.0.1 调用 OpenAI-compatible 模型生成结构化 Agent 决策
-- 识别 `FETCH`、`TREND`、`COMPARISON`、`RANKING`、`AMBIGUOUS` 和 `UNSUPPORTED` 意图
+- 识别 `QUERY`、`AMBIGUOUS` 和 `UNSUPPORTED` 意图
 - 通过 `search_schema`、`get_schema` 和 `execute_readonly_sql` 三个受控工具完成查询
 - 使用 JSqlParser 校验 SQL，只允许安全的只读查询
 - 通过只读数据库账号、查询超时和最大行数构建多层安全边界
@@ -142,10 +142,7 @@ POST /api/datasources/{id}/rag-index
 
 | 意图 | 含义 |
 | --- | --- |
-| `FETCH` | 查询明细、汇总或单个指标 |
-| `TREND` | 按时间观察指标变化 |
-| `COMPARISON` | 比较对象、分组或时间范围 |
-| `RANKING` | 排名、Top N 或 Bottom N |
+| `QUERY` | 可通过当前数据源的只读查询回答 |
 | `AMBIGUOUS` | 查询条件不足，需要用户补充 |
 | `UNSUPPORTED` | 当前只读数据源无法回答 |
 

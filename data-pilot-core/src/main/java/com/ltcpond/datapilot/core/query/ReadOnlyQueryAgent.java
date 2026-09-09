@@ -48,8 +48,7 @@ public class ReadOnlyQueryAgent {
     private static final int MAX_TEXT_LENGTH = 10_000;
     private static final int MAX_SUMMARY_LENGTH = 2_000;
     private static final int MAX_REASON_LENGTH = 512;
-    private static final Set<String> QUERY_INTENTS = Set.of(
-            "FETCH", "TREND", "COMPARISON", "RANKING");
+    private static final Set<String> QUERY_INTENTS = Set.of("QUERY");
     private static final Set<String> TOOLS = Set.of(
             "search_schema", "get_schema", "execute_readonly_sql");
 

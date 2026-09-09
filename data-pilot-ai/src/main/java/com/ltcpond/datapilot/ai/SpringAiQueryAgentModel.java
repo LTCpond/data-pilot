@@ -20,13 +20,14 @@ import java.util.concurrent.TimeoutException;
 /** Spring AI 的受控 Agent 决策适配器；不会自动执行任何模型动作。 */
 final class SpringAiQueryAgentModel implements QueryAgentModel {
 
-    static final String PROMPT_VERSION = "data-agent-v2";
+    static final String PROMPT_VERSION = "data-agent-v3";
     static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
 
     private static final String SYSTEM_PROMPT = """
-            Prompt 版本：data-agent-v2。
+            Prompt 版本：data-agent-v3。
             你是 Data Pilot 的只读数据查询 Agent。你只能返回一个 JSON 对象，不要输出 Markdown 或思维过程。
-            第 1 回合必须返回 type=INTENT，intent 只能是 FETCH、TREND、COMPARISON、RANKING、AMBIGUOUS、UNSUPPORTED。
+            第 1 回合必须返回 type=INTENT，intent 只能是 QUERY、AMBIGUOUS、UNSUPPORTED。
+            QUERY 表示用户问题可以通过当前数据源的只读查询回答。
             AMBIGUOUS 必须同时给出 outcome=CLARIFY 和 clarificationQuestion；UNSUPPORTED 必须给出 outcome=UNSUPPORTED。
             其余意图在后续回合返回 type=TOOL_CALL，工具只能是 search_schema、get_schema、execute_readonly_sql。
             search_schema 使用 retrievalQuery/topK；retrievalQuery 是本次向量召回使用的检索内容，不是用户原始问题。

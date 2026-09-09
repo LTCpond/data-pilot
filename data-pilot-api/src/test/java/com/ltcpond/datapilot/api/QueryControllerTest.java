@@ -53,13 +53,13 @@ class QueryControllerTest {
         QueryService service = mock(QueryService.class);
         LocalDateTime now = LocalDateTime.now();
         when(service.steps(9L)).thenReturn(List.of(new AgentStepView(
-                1L, 9L, 1, "INTENT", null, "SUCCEEDED", "识别意图：FETCH",
+                1L, 9L, 1, "INTENT", null, "SUCCEEDED", "识别意图：QUERY",
                 null, 3L, 10, 5, now, now)));
 
         mockMvc(service).perform(get("/api/queries/9/steps"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].stepNo").value(1))
-                .andExpect(jsonPath("$.data[0].summary").value("识别意图：FETCH"));
+                .andExpect(jsonPath("$.data[0].summary").value("识别意图：QUERY"));
     }
 
     private MockMvc mockMvc(QueryService service) {

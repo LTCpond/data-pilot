@@ -105,7 +105,7 @@ class QueryServiceTest {
         step.setStepNo(1);
         step.setKind("INTENT");
         step.setStatus("SUCCEEDED");
-        step.setSummary("识别意图：FETCH");
+        step.setSummary("识别意图：QUERY");
         step.setStartedAt(LocalDateTime.now());
         step.setCompletedAt(LocalDateTime.now());
         when(taskStore.findTask(9L)).thenReturn(Optional.of(task));
@@ -113,7 +113,7 @@ class QueryServiceTest {
 
         assertThat(service.steps(9L)).singleElement()
                 .extracting(AgentStepView::summary)
-                .isEqualTo("识别意图：FETCH");
+                .isEqualTo("识别意图：QUERY");
     }
 
     private QueryTaskEntity task(String status) {

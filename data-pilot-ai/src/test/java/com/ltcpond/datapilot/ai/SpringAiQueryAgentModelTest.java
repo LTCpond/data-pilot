@@ -27,14 +27,14 @@ class SpringAiQueryAgentModelTest {
     @Test
     void shouldParseStructuredDecisionAndExposeOnlyControlledTools() {
         ChatModel chatModel = modelReturning("""
-                {"type":"INTENT","intent":"FETCH","tableNames":[],"relatedTables":[]}
+                {"type":"INTENT","intent":"QUERY","tableNames":[],"relatedTables":[]}
                 """);
         SpringAiQueryAgentModel model = new SpringAiQueryAgentModel(enabled(), chatModel);
 
         AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询订单", 1, null, List.of()));
 
-        assertThat(outcome.decision().intent()).isEqualTo("FETCH");
-        assertThat(outcome.metrics().promptVersion()).isEqualTo("data-agent-v2");
+        assertThat(outcome.decision().intent()).isEqualTo("QUERY");
+        assertThat(outcome.metrics().promptVersion()).isEqualTo("data-agent-v3");
         ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(prompt.capture());
         assertThat(prompt.getValue().getContents())
