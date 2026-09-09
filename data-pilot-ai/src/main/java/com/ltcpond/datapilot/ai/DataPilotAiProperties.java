@@ -17,7 +17,7 @@ public class DataPilotAiProperties {
     private int maximumRepairAttempts = 2;
     private int defaultMaxRows = 100;
     private int absoluteMaxRows = 200;
-    private int maximumAgentTurns = 8;
+    private int maximumAgentTurns = 12;
     private int maximumTotalToolFailures = 4;
     private int maximumSameFailure = 3;
     private int toolObservationMaxRows = 20;

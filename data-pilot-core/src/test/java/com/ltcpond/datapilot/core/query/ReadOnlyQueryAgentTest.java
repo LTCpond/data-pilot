@@ -36,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -164,6 +166,115 @@ class ReadOnlyQueryAgentTest {
     }
 
     @Test
+    void shouldUseDistinctRetrievalQueriesAndAccumulateTablesInSchemaOrder() {
+        SchemaTableView orders = table(1L, "orders");
+        SchemaTableView payments = table(2L, "payments");
+        SchemaTableView refunds = table(3L, "refunds");
+        schema = new DatasourceSchemaView(1L, List.of(orders, payments, refunds));
+        SchemaRetrievalResult first = retrievalResult(
+                List.of(payments, orders), "RAG", false, 2L);
+        SchemaRetrievalResult second = retrievalResult(
+                List.of(refunds, orders), "RAG", false, 3L);
+        when(schemaRetriever.retrieve(datasource, schema, "订单支付", 6)).thenReturn(first);
+        when(schemaRetriever.retrieve(datasource, schema, "退款与订单关联", 6)).thenReturn(second);
+        when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
+                .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
+        script(
+                intent("FETCH"),
+                searchTool("订单支付"),
+                searchTool("退款与订单关联"),
+                tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
+                answer());
+
+        QueryResultView result = agent.execute(task, datasource, schema, Instant.now());
+
+        verify(schemaRetriever).retrieve(datasource, schema, "订单支付", 6);
+        verify(schemaRetriever).retrieve(datasource, schema, "退款与订单关联", 6);
+        assertThat(task.getQuestion()).isEqualTo("查询订单数量");
+        assertThat(result.retrieval().retrievedTables())
+                .containsExactly("orders", "payments", "refunds");
+        assertThat(result.retrieval().promptTableCount()).isEqualTo(3);
+        assertThat(result.retrieval().durationMs()).isEqualTo(5L);
+        assertThat(task.getRetrievedTables()).isEqualTo("orders,payments,refunds");
+        assertThat(task.getRetrievalDurationMs()).isEqualTo(5L);
+    }
+
+    @Test
+    void shouldReportWhenAnotherSearchAddsNoCandidateTables() {
+        SchemaRetrievalResult repeated = retrievalResult(
+                schema.tables(), "RAG", false, 1L);
+        when(schemaRetriever.retrieve(datasource, schema, "订单", 6)).thenReturn(repeated);
+        when(schemaRetriever.retrieve(datasource, schema, "订单统计", 6)).thenReturn(repeated);
+        when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
+                .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
+        script(
+                intent("FETCH"),
+                searchTool("订单"),
+                searchTool("订单统计"),
+                tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
+                answer());
+
+        agent.execute(task, datasource, schema, Instant.now());
+
+        ArgumentCaptor<com.ltcpond.datapilot.ai.AgentTurnRequest> requests =
+                ArgumentCaptor.forClass(com.ltcpond.datapilot.ai.AgentTurnRequest.class);
+        verify(model, times(5)).next(requests.capture());
+        String secondSearchObservation = requests.getAllValues().get(3)
+                .observations().get(1).output();
+        assertThat(secondSearchObservation)
+                .contains("检索内容：订单统计", "新增候选表：[]", "本次没有新增候选表");
+    }
+
+    @Test
+    void shouldRejectInvalidRetrievalQueriesAndAllowCorrection() {
+        String tooLong = "查".repeat(1_001);
+        script(
+                intent("FETCH"),
+                searchTool(" "),
+                searchTool(tooLong),
+                searchTool(task.getQuestion()),
+                tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
+                answer());
+        when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
+                .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
+
+        QueryResultView result = agent.execute(task, datasource, schema, Instant.now());
+
+        assertThat(result.rowCount()).isEqualTo(1);
+        verify(schemaRetriever, never()).retrieve(datasource, schema, " ", 6);
+        verify(schemaRetriever, never()).retrieve(datasource, schema, tooLong, 6);
+        verify(schemaRetriever).retrieve(datasource, schema, task.getQuestion(), 6);
+    }
+
+    @Test
+    void shouldKeepFullSchemaFallbackAndAccumulateRetrievalMetrics() {
+        SchemaTableView orders = table(1L, "orders");
+        SchemaTableView refunds = table(2L, "refunds");
+        schema = new DatasourceSchemaView(1L, List.of(orders, refunds));
+        when(schemaRetriever.retrieve(datasource, schema, "订单", 6)).thenReturn(
+                retrievalResult(List.of(orders), "RAG", false, 2L));
+        when(schemaRetriever.retrieve(datasource, schema, "退款", 6)).thenReturn(
+                retrievalResult(List.of(orders, refunds), "FULL_SCHEMA", true, 4L));
+        when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
+                .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
+        script(
+                intent("FETCH"),
+                searchTool("订单"),
+                searchTool("退款"),
+                tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
+                answer());
+
+        QueryResultView result = agent.execute(task, datasource, schema, Instant.now());
+
+        assertThat(result.retrieval().mode()).isEqualTo("FULL_SCHEMA");
+        assertThat(result.retrieval().fallback()).isTrue();
+        assertThat(result.retrieval().retrievedTables()).containsExactly("orders", "refunds");
+        assertThat(result.retrieval().durationMs()).isEqualTo(6L);
+        assertThat(task.getRagUsed()).isFalse();
+        assertThat(task.getRagFallback()).isTrue();
+    }
+
+    @Test
     void shouldStopAfterThirdIdenticalToolFailure() {
         script(
                 intent("FETCH"),
@@ -197,6 +308,12 @@ class ReadOnlyQueryAgentTest {
                 null, null, List.of(), null, null, null);
     }
 
+    private AgentDecision searchTool(String retrievalQuery) {
+        return new AgentDecision(
+                "TOOL_CALL", null, "search_schema", retrievalQuery, 6, List.of(), null,
+                null, null, List.of(), null, null, null);
+    }
+
     private AgentDecision answer() {
         return new AgentDecision(
                 "FINAL", null, null, null, null, List.of(), null,
@@ -206,5 +323,18 @@ class ReadOnlyQueryAgentTest {
 
     private AiCallMetrics metrics() {
         return new AiCallMetrics("test-model", "data-agent-v1", 10, 5, 15, 2L);
+    }
+
+    private SchemaTableView table(Long id, String name) {
+        return new SchemaTableView(id, "demo", name, "TABLE", name, List.of(), List.of());
+    }
+
+    private SchemaRetrievalResult retrievalResult(
+            List<SchemaTableView> tables, String mode, boolean fallback, long durationMs) {
+        DatasourceSchemaView selected = new DatasourceSchemaView(1L, tables);
+        RetrievalView view = new RetrievalView(
+                mode, fallback, schema.tables().size(), tables.size(),
+                tables.stream().map(SchemaTableView::name).toList(), durationMs);
+        return new SchemaRetrievalResult(selected, view);
     }
 }

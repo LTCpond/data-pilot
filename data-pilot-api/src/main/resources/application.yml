@@ -57,7 +57,7 @@ data-pilot:
     maximum-repair-attempts: 2
     default-max-rows: 100
     absolute-max-rows: 200
-    maximum-agent-turns: 8
+    maximum-agent-turns: 12
     maximum-total-tool-failures: 4
     maximum-same-failure: 3
     tool-observation-max-rows: 20

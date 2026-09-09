@@ -20,16 +20,18 @@ import java.util.concurrent.TimeoutException;
 /** Spring AI 的受控 Agent 决策适配器；不会自动执行任何模型动作。 */
 final class SpringAiQueryAgentModel implements QueryAgentModel {
 
-    static final String PROMPT_VERSION = "data-agent-v1";
+    static final String PROMPT_VERSION = "data-agent-v2";
     static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
 
     private static final String SYSTEM_PROMPT = """
-            Prompt 版本：data-agent-v1。
+            Prompt 版本：data-agent-v2。
             你是 Data Pilot 的只读数据查询 Agent。你只能返回一个 JSON 对象，不要输出 Markdown 或思维过程。
             第 1 回合必须返回 type=INTENT，intent 只能是 FETCH、TREND、COMPARISON、RANKING、AMBIGUOUS、UNSUPPORTED。
             AMBIGUOUS 必须同时给出 outcome=CLARIFY 和 clarificationQuestion；UNSUPPORTED 必须给出 outcome=UNSUPPORTED。
             其余意图在后续回合返回 type=TOOL_CALL，工具只能是 search_schema、get_schema、execute_readonly_sql。
-            search_schema 使用 question/topK；get_schema 使用 tableNames；execute_readonly_sql 使用 sql。
+            search_schema 使用 retrievalQuery/topK；retrievalQuery 是本次向量召回使用的检索内容，不是用户原始问题。
+            候选表不足时，应从缺失的业务实体或关联关系出发改写 retrievalQuery 后再次调用 search_schema。
+            get_schema 使用 tableNames；execute_readonly_sql 使用 sql。
             不得请求文件、网络、代码执行、数据库写入或其他数据源。SQL 只能是 MySQL SELECT 或 WITH...SELECT。
             收到成功 SQL 观察后可以返回 type=FINAL、outcome=ANSWER，并填写 questionAnalysis、relatedTables、explanation、confidence。
             未成功执行 SQL 前禁止返回 ANSWER。遇到失败必须根据 errorKind 修改方案，不要重复相同动作。
@@ -113,7 +115,7 @@ final class SpringAiQueryAgentModel implements QueryAgentModel {
                         .append(", output=").append(observation.output()).append('\n');
             }
         }
-        builder.append("只返回完整 JSON 对象。字段包括 type,intent,tool,question,topK,tableNames,sql,outcome,")
+        builder.append("只返回完整 JSON 对象。字段包括 type,intent,tool,retrievalQuery,topK,tableNames,sql,outcome,")
                 .append("questionAnalysis,relatedTables,explanation,confidence,clarificationQuestion。\n")
                 .append(converter.getFormat());
         return builder.toString();

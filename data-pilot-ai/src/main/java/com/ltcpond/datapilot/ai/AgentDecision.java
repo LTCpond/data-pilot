@@ -8,7 +8,7 @@ public record AgentDecision(
         String type,
         String intent,
         String tool,
-        String question,
+        String retrievalQuery,
         Integer topK,
         List<String> tableNames,
         String sql,

@@ -153,7 +153,7 @@ Agent 只能调用以下工具，数据源由当前任务自动绑定，模型�
 
 | 工具 | 作用 | 主要约束 |
 | --- | --- | --- |
-| `search_schema(question, topK)` | 使用现有 Schema RAG 找到候选表 | 问题仍以当前任务为准，TopK 受应用限制 |
+| `search_schema(retrievalQuery, topK)` | 使用现有 Schema RAG 找到候选表 | Agent 可改写每次召回内容，结果在任务内累积，TopK 受应用限制 |
 | `get_schema(tableNames)` | 读取列、主键、外键和注释 | 单次最多 6 张表，只允许已同步的真实表 |
 | `execute_readonly_sql(sql)` | 校验并执行查询 | 必须先检索 Schema，并通过完整 Schema 白名单和 JSqlParser 校验 |
 
@@ -165,7 +165,7 @@ Agent 只能调用以下工具，数据源由当前任务自动绑定，模型�
 
 | 配置 | 默认值 | 说明 |
 | --- | ---: | --- |
-| `maximum-agent-turns` | 8 | 单个任务最多模型回合数 |
+| `maximum-agent-turns` | 12 | 单个任务最多模型回合数 |
 | `agent-timeout` | 120s | 包含模型与工具调用的总墙钟时间 |
 | `maximum-total-tool-failures` | 4 | 所有工具累计失败上限 |
 | `maximum-same-failure` | 3 | 同一 `toolName:errorKind` 第三次失败时终止 |
@@ -222,10 +222,10 @@ DATA_PILOT_AI_MODEL=your-model-name
 
 ```text
 Agent 调用 search_schema
-→ Ollama bge-m3 生成问题向量
+→ Ollama bge-m3 为本次 retrievalQuery 生成向量
 → pgvector 召回 TopK 表
 → 补充直接出现的表名和一跳外键关联表
-→ 最多返回 12 张候选表
+→ 单次最多返回 12 张候选表，多次调用结果在任务内有序去重并累积
 → Agent 按需调用 get_schema
 ```
 

@@ -44,6 +44,7 @@ import java.util.Set;
 public class ReadOnlyQueryAgent {
 
     private static final int MAX_TABLES_PER_CALL = 6;
+    private static final int MAX_RETRIEVAL_QUERY_LENGTH = 1_000;
     private static final int MAX_TEXT_LENGTH = 10_000;
     private static final int MAX_SUMMARY_LENGTH = 2_000;
     private static final int MAX_REASON_LENGTH = 512;
@@ -200,7 +201,8 @@ public class ReadOnlyQueryAgent {
         Instant toolStarted = Instant.now();
         // 工具参数由应用校验，工具执行仍完全掌握在应用侧。
         ToolResult result = switch (tool) {
-            case "search_schema" -> searchSchema(context, decision.topK());
+            case "search_schema" -> searchSchema(
+                    context, decision.retrievalQuery(), decision.topK());
             case "get_schema" -> getSchema(context, decision.tableNames());
             case "execute_readonly_sql" -> executeSql(context, decision.sql(), modelOutcome.metrics());
             default -> throw new IllegalStateException("不可达工具分支");
@@ -238,18 +240,46 @@ public class ReadOnlyQueryAgent {
     }
 
     /** 复用 Schema RAG 检索候选表，并保存本次检索指标。 */
-    private ToolResult searchSchema(Context context, Integer topK) {
+    private ToolResult searchSchema(Context context, String retrievalQuery, Integer topK) {
+        if (retrievalQuery == null || retrievalQuery.isBlank()) {
+            return ToolResult.failure(
+                    "INVALID_TOOL_ARGUMENT", "Schema 检索内容不能为空",
+                    "请提供非空的 retrievalQuery，并根据需要检索的业务实体或关联关系组织内容。", false);
+        }
+        String normalizedQuery = retrievalQuery.strip();
+        if (normalizedQuery.length() > MAX_RETRIEVAL_QUERY_LENGTH) {
+            return ToolResult.failure(
+                    "INVALID_TOOL_ARGUMENT", "Schema 检索内容超过长度限制",
+                    "请将 retrievalQuery 缩短到 1000 个字符以内。", false);
+        }
+
         // 候选表检索复用现有 Schema RAG，并自动绑定当前任务的数据源。
-        SchemaRetrievalResult retrieval = schemaRetriever.retrieve(
-                context.datasource, context.fullSchema, context.task.getQuestion(), topK);
-        context.retrieval = retrieval;
-        String schemaPrompt = schemaPromptBuilder.build(retrieval.schema());
-        applyRetrieval(context.task, retrieval.view(), schemaPrompt.length());
+        Set<String> previousTables = new LinkedHashSet<>();
+        if (context.retrieval != null) {
+            context.retrieval.view().retrievedTables().forEach(
+                    table -> previousTables.add(table.toLowerCase(Locale.ROOT)));
+        }
+        SchemaRetrievalResult currentRetrieval = schemaRetriever.retrieve(
+                context.datasource, context.fullSchema, normalizedQuery, topK);
+        List<String> newTables = currentRetrieval.view().retrievedTables().stream()
+                .filter(table -> !previousTables.contains(table.toLowerCase(Locale.ROOT)))
+                .toList();
+        context.retrieval = mergeRetrieval(context, currentRetrieval);
+        String schemaPrompt = schemaPromptBuilder.build(context.retrieval.schema());
+        applyRetrieval(context.task, context.retrieval.view(), schemaPrompt.length());
         taskStore.updateTask(context.task);
-        String tables = String.join(", ", retrieval.view().retrievedTables());
+        String observation = "检索内容：" + normalizedQuery
+                + "；本次候选表：" + currentRetrieval.view().retrievedTables()
+                + "；新增候选表：" + newTables
+                + "；累计候选表：" + context.retrieval.view().retrievedTables();
+        if (newTables.isEmpty() && !previousTables.isEmpty()) {
+            observation += "；本次没有新增候选表，请更换检索角度或继续使用已有 Schema。";
+        }
         return ToolResult.success(
-                "候选表：" + tables,
-                "Schema 检索完成，命中 " + retrieval.view().promptTableCount() + " 张表");
+                observation,
+                "Schema 检索完成，检索内容：" + normalizedQuery
+                        + "，本次候选表：" + currentRetrieval.view().retrievedTables()
+                        + "，新增候选表：" + newTables);
     }
 
     /** 返回指定真实表的受控元数据，拒绝不存在或越界的表请求。 */
@@ -510,6 +540,37 @@ public class ReadOnlyQueryAgent {
                 entity.getToolName(), entity.getStatus(), entity.getSummary(), entity.getErrorKind(),
                 entity.getDurationMs(), entity.getPromptTokens(), entity.getCompletionTokens(),
                 entity.getStartedAt(), entity.getCompletedAt());
+    }
+
+    /** 将本次召回合并到任务累计结果，并按完整 Schema 顺序稳定去重。 */
+    private SchemaRetrievalResult mergeRetrieval(
+            Context context, SchemaRetrievalResult currentRetrieval) {
+        if (context.retrieval == null) {
+            return currentRetrieval;
+        }
+        RetrievalView previousView = context.retrieval.view();
+        RetrievalView currentView = currentRetrieval.view();
+        Set<String> selected = new LinkedHashSet<>();
+        previousView.retrievedTables().forEach(
+                table -> selected.add(table.toLowerCase(Locale.ROOT)));
+        currentView.retrievedTables().forEach(
+                table -> selected.add(table.toLowerCase(Locale.ROOT)));
+        List<SchemaTableView> cumulativeTables = context.fullSchema.tables().stream()
+                .filter(table -> selected.contains(table.name().toLowerCase(Locale.ROOT)))
+                .toList();
+        List<String> cumulativeNames = cumulativeTables.stream().map(SchemaTableView::name).toList();
+        boolean fullSchema = "FULL_SCHEMA".equals(previousView.mode())
+                || "FULL_SCHEMA".equals(currentView.mode());
+        RetrievalView cumulativeView = new RetrievalView(
+                fullSchema ? "FULL_SCHEMA" : "RAG",
+                previousView.fallback() || currentView.fallback(),
+                Math.max(previousView.totalTableCount(), currentView.totalTableCount()),
+                cumulativeTables.size(),
+                cumulativeNames,
+                previousView.durationMs() + currentView.durationMs());
+        return new SchemaRetrievalResult(
+                new DatasourceSchemaView(context.fullSchema.datasourceId(), cumulativeTables),
+                cumulativeView);
     }
 
     /** 将 Schema 检索范围、耗时和提示词大小写入任务统计。 */

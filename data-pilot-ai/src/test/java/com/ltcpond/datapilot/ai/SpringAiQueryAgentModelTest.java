@@ -34,11 +34,13 @@ class SpringAiQueryAgentModelTest {
         AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询订单", 1, null, List.of()));
 
         assertThat(outcome.decision().intent()).isEqualTo("FETCH");
-        assertThat(outcome.metrics().promptVersion()).isEqualTo("data-agent-v1");
+        assertThat(outcome.metrics().promptVersion()).isEqualTo("data-agent-v2");
         ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(prompt.capture());
         assertThat(prompt.getValue().getContents())
                 .contains("search_schema", "get_schema", "execute_readonly_sql")
+                .contains("retrievalQuery")
+                .doesNotContain("tool,question,topK")
                 .doesNotContain("文件工具", "网络工具");
         assertThat(((OpenAiChatOptions) prompt.getValue().getOptions()).getTimeout())
                 .isEqualTo(SpringAiQueryAgentModel.REQUEST_TIMEOUT);
