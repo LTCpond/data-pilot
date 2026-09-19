@@ -9,7 +9,7 @@ Data Pilot 是一个基于 Java 21、Spring Boot 和 Spring AI 构建的自然�
 - 管理和测试 MySQL 数据源连接
 - AES-256-GCM 加密保存数据源密码
 - 同步表、字段、主键、外键和中文注释
-- 使用 Spring AI 2.0.1 调用 OpenAI-compatible 模型生成结构化 Agent 决策
+- 使用 Spring AI 2.0.1 和严格 Function Calling 生成单个类型化 Agent 动作
 - 识别 `QUERY`、`AMBIGUOUS` 和 `UNSUPPORTED` 意图
 - 通过 `search_schema`、`get_schema` 和 `execute_readonly_sql` 三个受控工具完成查询
 - 使用 JSqlParser 校验 SQL，只允许安全的只读查询
@@ -123,7 +123,7 @@ POST /api/datasources/{id}/rag-index
 
 ## 受控只读查询 Agent
 
-问数流程由普通 Java 代码和状态机编排。Spring AI 适配层只负责生成结构化决策，不启用框架自动工具执行；工具参数校验、执行、超时、取消、轨迹和最终结果均由应用控制。
+问数流程由普通 Java 代码和状态机编排。Spring AI 适配层通过 `tool_choice=required`、`parallel_tool_calls=false` 和严格 Function Calling 每回合只生成一个类型化动作，不启用框架自动工具执行；工具参数校验、执行、超时、取消、轨迹和最终结果均由应用控制。
 
 ```text
 提交问题
@@ -153,6 +153,8 @@ Agent 只能调用以下工具，数据源由当前任务自动绑定，模型�
 | `search_schema(retrievalQuery, topK)` | 使用现有 Schema RAG 找到候选表 | Agent 可改写每次召回内容，结果在任务内累积，TopK 受应用限制 |
 | `get_schema(tableNames)` | 读取列、主键、外键和注释 | 单次最多 6 张表，只允许已同步的真实表 |
 | `execute_readonly_sql(sql)` | 校验并执行查询 | 必须先检索 Schema，并通过完整 Schema 白名单和 JSqlParser 校验 |
+
+意图和终态也使用受约束函数表达：首轮只能选择 `accept_query`、`request_clarification` 或 `reject_unsupported`；工具阶段只能在三个查询工具以及 `finish_answer`、`request_clarification`、`reject_unsupported` 中选择一个。每个函数使用独立 JSON Schema，不再共享包含大量可空字段的通用决策对象。
 
 查询类任务只有在 `execute_readonly_sql` 至少成功一次后才能进入 `SUCCEEDED`。最终 SQL、列、行数和业务数据均以工具执行结果为准，模型不能自行声明查询成功。
 
@@ -187,7 +189,7 @@ DATA_PILOT_AI_API_KEY=replace-with-local-secret
 DATA_PILOT_AI_MODEL=your-model-name
 ```
 
-模型需要可靠返回符合约定的结构化 JSON 决策。不支持该协议或返回无法解析的动作时，任务会以稳定细分错误码 `AI_TOOL_CALLING_UNSUPPORTED` 结束。
+模型端点必须支持 OpenAI-compatible Function Calling、`tool_choice=required`、禁用并行调用以及严格参数 Schema。模型没有返回唯一白名单函数、函数不属于当前阶段或参数无法解析时，任务会以稳定细分错误码 `AI_TOOL_CALLING_UNSUPPORTED` 结束，不会静默降级到提示词 JSON。
 
 没有启用模型时应用仍然可以启动，但创建问数任务会返回 HTTP 503。模型密钥不会进入 Prompt、日志、Agent 轨迹或管理数据库。
 

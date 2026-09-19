@@ -1,6 +1,6 @@
 package com.ltcpond.datapilot.core.query;
 
-import com.ltcpond.datapilot.ai.AgentDecision;
+import com.ltcpond.datapilot.ai.AgentAction;
 import com.ltcpond.datapilot.ai.AgentTurnOutcome;
 import com.ltcpond.datapilot.ai.AiCallMetrics;
 import com.ltcpond.datapilot.ai.DataPilotAiProperties;
@@ -134,9 +134,7 @@ class ReadOnlyQueryAgentTest {
 
     @Test
     void shouldPersistClarificationAsTerminalWithoutExecutingSql() {
-        script(new AgentDecision(
-                "INTENT", "AMBIGUOUS", null, null, null, List.of(), null,
-                "CLARIFY", "缺少时间范围", List.of(), null, null, "要查询哪个时间范围？"));
+        script(new AgentAction.RequestClarification("缺少时间范围", "要查询哪个时间范围？"));
 
         QueryResultView result = agent.execute(task, datasource, schema, Instant.now());
 
@@ -321,35 +319,38 @@ class ReadOnlyQueryAgentTest {
         assertThat(task.getErrorCode()).isEqualTo("SCHEMA_NOT_PREPARED");
     }
 
-    private void script(AgentDecision... decisions) {
-        Queue<AgentDecision> queue = new ArrayDeque<>(List.of(decisions));
+    private void script(AgentAction... actions) {
+        Queue<AgentAction> queue = new ArrayDeque<>(List.of(actions));
         when(model.next(any())).thenAnswer(invocation ->
                 new AgentTurnOutcome(queue.remove(), metrics()));
     }
 
-    private AgentDecision intent(String intent) {
-        return new AgentDecision(
-                "INTENT", intent, null, null, null, List.of(), null,
-                null, "识别查询意图", List.of(), null, null, null);
+    private AgentAction intent(String intent) {
+        return switch (intent) {
+            case "QUERY" -> new AgentAction.AcceptQuery();
+            case "AMBIGUOUS" -> new AgentAction.RequestClarification(
+                    "识别查询意图", "请补充查询条件");
+            case "UNSUPPORTED" -> new AgentAction.RejectUnsupported();
+            default -> throw new IllegalArgumentException("未知测试意图：" + intent);
+        };
     }
 
-    private AgentDecision tool(String name, String sql) {
-        return new AgentDecision(
-                "TOOL_CALL", null, name, task.getQuestion(), 6, List.of("orders"), sql,
-                null, null, List.of(), null, null, null);
+    private AgentAction tool(String name, String sql) {
+        return switch (name) {
+            case "search_schema" -> new AgentAction.SearchSchema(task.getQuestion(), 6);
+            case "get_schema" -> new AgentAction.GetSchema(List.of("orders"));
+            case "execute_readonly_sql" -> new AgentAction.ExecuteReadonlySql(sql);
+            default -> throw new IllegalArgumentException("未知测试工具：" + name);
+        };
     }
 
-    private AgentDecision searchTool(String retrievalQuery) {
-        return new AgentDecision(
-                "TOOL_CALL", null, "search_schema", retrievalQuery, 6, List.of(), null,
-                null, null, List.of(), null, null, null);
+    private AgentAction searchTool(String retrievalQuery) {
+        return new AgentAction.SearchSchema(retrievalQuery, 6);
     }
 
-    private AgentDecision answer() {
-        return new AgentDecision(
-                "FINAL", null, null, null, null, List.of(), null,
-                "ANSWER", "统计订单数量", List.of("orders"), "返回订单总数",
-                new BigDecimal("0.95"), null);
+    private AgentAction answer() {
+        return new AgentAction.FinishAnswer(
+                "统计订单数量", List.of("orders"), "返回订单总数", new BigDecimal("0.95"));
     }
 
     private AiCallMetrics metrics() {

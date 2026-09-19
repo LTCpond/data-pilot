@@ -53,7 +53,11 @@ class SpringAiSqlGeneratorTest {
         assertThat(options.getMaxCompletionTokens()).isEqualTo(1200);
         assertThat(options.getTimeout()).isEqualTo(SpringAiSqlGenerator.REQUEST_TIMEOUT);
         assertThat(options.getResponseFormat().getType())
-                .isEqualTo(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT);
+                .isEqualTo(OpenAiChatModel.ResponseFormat.Type.JSON_SCHEMA);
+        assertThat(options.getResponseFormat().getStrict()).isTrue();
+        assertThat(options.getResponseFormat().getJsonSchema())
+                .contains("answerable", "questionAnalysis", "relatedTables", "sql", "confidence",
+                        "required", "additionalProperties");
     }
 
     @Test

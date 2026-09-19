@@ -142,7 +142,8 @@ final class SpringAiSqlGenerator implements SqlGenerator {
 
     private OpenAiChatOptions.Builder requestOptions() {
         OpenAiChatModel.ResponseFormat responseFormat = OpenAiChatModel.ResponseFormat.builder()
-                .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT)
+                .jsonSchema(outputConverter.getJsonSchema())
+                .strict(true)
                 .build();
         return OpenAiChatOptions.builder()
                 .responseFormat(responseFormat)

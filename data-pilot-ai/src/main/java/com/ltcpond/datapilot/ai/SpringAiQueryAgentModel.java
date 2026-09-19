@@ -2,68 +2,173 @@ package com.ltcpond.datapilot.ai;
 
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
-import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.converter.BeanOutputConverter;
-import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
-/** Spring AI 的受控 Agent 决策适配器；不会自动执行任何模型动作。 */
+/** Spring AI 的受控 Agent 动作适配器；只解析 Function Call，不自动执行工具。 */
 final class SpringAiQueryAgentModel implements QueryAgentModel {
 
-    static final String PROMPT_VERSION = "data-agent-v3";
+    static final String PROMPT_VERSION = "data-agent-v4";
     static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(60);
 
     private static final String SYSTEM_PROMPT = """
-            Prompt 版本：data-agent-v3。
-            你是 Data Pilot 的只读数据查询 Agent。你只能返回一个 JSON 对象，不要输出 Markdown 或思维过程。
-            第 1 回合必须返回 type=INTENT，intent 只能是 QUERY、AMBIGUOUS、UNSUPPORTED。
-            QUERY 表示用户问题可以通过当前数据源的只读查询回答。
-            AMBIGUOUS 必须同时给出 outcome=CLARIFY 和 clarificationQuestion；UNSUPPORTED 必须给出 outcome=UNSUPPORTED。
-            其余意图在后续回合返回 type=TOOL_CALL，工具只能是 search_schema、get_schema、execute_readonly_sql。
-            search_schema 使用 retrievalQuery/topK；retrievalQuery 是本次向量召回使用的检索内容，不是用户原始问题。
-            候选表不足时，应从缺失的业务实体或关联关系出发改写 retrievalQuery 后再次调用 search_schema。
-            get_schema 使用 tableNames；execute_readonly_sql 使用 sql。
-            不得请求文件、网络、代码执行、数据库写入或其他数据源。SQL 只能是 MySQL SELECT 或 WITH...SELECT。
-            收到成功 SQL 观察后可以返回 type=FINAL、outcome=ANSWER，并填写 questionAnalysis、relatedTables、explanation、confidence。
-            未成功执行 SQL 前禁止返回 ANSWER。遇到失败必须根据 errorKind 修改方案，不要重复相同动作。
-            FINAL outcome 只能是 ANSWER、CLARIFY、UNSUPPORTED。
+            Prompt 版本：data-agent-v4。
+            你是 Data Pilot 的只读数据查询 Agent。每回合必须且只能调用一个当前可用的函数表达下一步动作。
+            第 1 回合只做路由：可回答的只读查询调用 accept_query；条件不足调用 request_clarification；
+            当前数据源无法回答时调用 reject_unsupported。
+            后续回合可调用 search_schema、get_schema、execute_readonly_sql；条件不足或不可回答时调用相应终态函数。
+            search_schema 的 retrievalQuery 是向量召回内容，不是机械复制用户原问题；候选表不足时应更换业务实体或关联角度。
+            execute_readonly_sql 只能提交一条 MySQL SELECT 或 WITH...SELECT，禁止写入、DDL、系统库、锁和文件操作。
+            收到成功 SQL 观察后才能调用 finish_answer。失败后必须依据 errorKind 更换方案，不得重复相同动作。
+            不得请求文件、网络、代码执行、数据库写入或当前函数集合之外的能力。
             """;
 
+    private static final String EMPTY_SCHEMA = """
+            {"type":"object","properties":{},"required":[],"additionalProperties":false}
+            """;
+
+    private static final ToolCallback ACCEPT_QUERY = action(
+            "accept_query",
+            "确认问题可以通过当前数据源的只读查询回答，并进入工具循环。",
+            EMPTY_SCHEMA);
+
+    private static final ToolCallback REQUEST_CLARIFICATION = action(
+            "request_clarification",
+            "问题缺少必要指标、范围或时间条件时，请求用户补充信息。",
+            """
+                    {
+                      "type":"object",
+                      "properties":{
+                        "questionAnalysis":{"type":["string","null"]},
+                        "clarificationQuestion":{"type":"string"}
+                      },
+                      "required":["questionAnalysis","clarificationQuestion"],
+                      "additionalProperties":false
+                    }
+                    """);
+
+    private static final ToolCallback REJECT_UNSUPPORTED = action(
+            "reject_unsupported",
+            "当前只读数据源无法回答用户问题时结束任务。",
+            EMPTY_SCHEMA);
+
+    private static final ToolCallback SEARCH_SCHEMA = action(
+            "search_schema",
+            "根据业务实体、指标和关联关系检索候选表；结果会在当前任务内累积。",
+            """
+                    {
+                      "type":"object",
+                      "properties":{
+                        "retrievalQuery":{"type":"string"},
+                        "topK":{"type":["integer","null"]}
+                      },
+                      "required":["retrievalQuery","topK"],
+                      "additionalProperties":false
+                    }
+                    """);
+
+    private static final ToolCallback GET_SCHEMA = action(
+            "get_schema",
+            "读取指定真实表的字段、主键、外键和注释；单次最多请求六张表。",
+            """
+                    {
+                      "type":"object",
+                      "properties":{
+                        "tableNames":{"type":"array","items":{"type":"string"}}
+                      },
+                      "required":["tableNames"],
+                      "additionalProperties":false
+                    }
+                    """);
+
+    private static final ToolCallback EXECUTE_READONLY_SQL = action(
+            "execute_readonly_sql",
+            "请求应用校验并执行一条只读 MySQL 查询；执行前必须已检索 Schema。",
+            """
+                    {
+                      "type":"object",
+                      "properties":{"sql":{"type":"string"}},
+                      "required":["sql"],
+                      "additionalProperties":false
+                    }
+                    """);
+
+    private static final ToolCallback FINISH_ANSWER = action(
+            "finish_answer",
+            "仅在只读 SQL 已成功执行后，基于可信执行结果完成回答。",
+            """
+                    {
+                      "type":"object",
+                      "properties":{
+                        "questionAnalysis":{"type":["string","null"]},
+                        "relatedTables":{"type":"array","items":{"type":"string"}},
+                        "explanation":{"type":["string","null"]},
+                        "confidence":{"type":["number","null"]}
+                      },
+                      "required":["questionAnalysis","relatedTables","explanation","confidence"],
+                      "additionalProperties":false
+                    }
+                    """);
+
+    private static final List<ToolCallback> ROUTING_ACTIONS = List.of(
+            ACCEPT_QUERY, REQUEST_CLARIFICATION, REJECT_UNSUPPORTED);
+    private static final List<ToolCallback> RUNNING_ACTIONS = List.of(
+            SEARCH_SCHEMA, GET_SCHEMA, EXECUTE_READONLY_SQL,
+            FINISH_ANSWER, REQUEST_CLARIFICATION, REJECT_UNSUPPORTED);
+    private static final Set<String> ROUTING_ACTION_NAMES = Set.of(
+            "accept_query", "request_clarification", "reject_unsupported");
+    private static final Set<String> RUNNING_ACTION_NAMES = Set.of(
+            "search_schema", "get_schema", "execute_readonly_sql",
+            "finish_answer", "request_clarification", "reject_unsupported");
+
+    private static final BeanOutputConverter<AgentAction.RequestClarification> CLARIFICATION_CONVERTER =
+            new BeanOutputConverter<>(AgentAction.RequestClarification.class);
+    private static final BeanOutputConverter<AgentAction.SearchSchema> SEARCH_SCHEMA_CONVERTER =
+            new BeanOutputConverter<>(AgentAction.SearchSchema.class);
+    private static final BeanOutputConverter<AgentAction.GetSchema> GET_SCHEMA_CONVERTER =
+            new BeanOutputConverter<>(AgentAction.GetSchema.class);
+    private static final BeanOutputConverter<AgentAction.ExecuteReadonlySql> EXECUTE_SQL_CONVERTER =
+            new BeanOutputConverter<>(AgentAction.ExecuteReadonlySql.class);
+    private static final BeanOutputConverter<AgentAction.FinishAnswer> FINISH_ANSWER_CONVERTER =
+            new BeanOutputConverter<>(AgentAction.FinishAnswer.class);
+
     private final DataPilotAiProperties properties;
-    private final ChatClient chatClient;
-    private final BeanOutputConverter<AgentDecision> converter = new BeanOutputConverter<>(AgentDecision.class);
+    private final ChatModel chatModel;
 
     /** 创建模型适配器；未配置模型时保留空客户端，由调用阶段返回稳定错误。 */
     SpringAiQueryAgentModel(DataPilotAiProperties properties, ChatModel chatModel) {
         this.properties = properties;
-        this.chatClient = chatModel == null ? null : ChatClient.create(chatModel);
+        this.chatModel = chatModel;
     }
 
-    /** 请求模型生成当前回合的结构化决策，并将格式和调用异常收敛为稳定业务错误。 */
+    /** 请求模型生成一个严格函数动作，并将格式和调用异常收敛为稳定业务错误。 */
     @Override
     public AgentTurnOutcome next(AgentTurnRequest request) {
-        // 在发起请求前统一检查 AI 配置与模型客户端是否可用。
         ensureAvailable();
         long startedAt = System.nanoTime();
         try {
-            // 应用自行发起模型调用，只要求 JSON 决策，不启用框架自动工具执行。
-            ChatResponse response = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(render(request))
-                    .options(options())
-                    .call()
-                    .chatResponse();
-            // 空响应无法形成可审计的 Agent 动作，直接作为模型失败处理。
+            Prompt prompt = new Prompt(
+                    List.of(new SystemMessage(SYSTEM_PROMPT), new UserMessage(render(request))),
+                    options(request).build());
+            ChatResponse response = chatModel.call(prompt);
             if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
                 throw failure("AI_EMPTY_RESPONSE");
             }
@@ -72,28 +177,47 @@ final class SpringAiQueryAgentModel implements QueryAgentModel {
             if (isTruncated(finishReason)) {
                 throw failure("AI_RESPONSE_TRUNCATED");
             }
-            String content = response.getResult().getOutput().getText();
-            if (content == null || content.isBlank()) {
-                throw failure("AI_EMPTY_RESPONSE");
-            }
-            AgentDecision decision;
-            try {
-                // 严格按 AgentDecision 解析，避免把自由文本当作可执行动作。
-                decision = converter.convert(content);
-            } catch (RuntimeException exception) {
-                throw new AppException(
-                        ResponseCode.AI_SQL_GENERATION_FAILED, "AI_TOOL_CALLING_UNSUPPORTED", exception);
-            }
-            if (decision == null || decision.type() == null || decision.type().isBlank()) {
-                throw failure("AI_TOOL_CALLING_UNSUPPORTED");
-            }
-            // 仅返回结构化决策和用量指标，实际工具始终由上层 Agent 调度。
-            return new AgentTurnOutcome(decision, metrics(response, elapsedMillis(startedAt)));
+            AgentAction action = parseAction(request, response.getResult().getOutput());
+            return new AgentTurnOutcome(action, metrics(response, elapsedMillis(startedAt)));
         } catch (AppException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             String code = hasTimeoutCause(exception) ? "AI_REQUEST_TIMEOUT" : "AI_AGENT_FAILED";
             throw new AppException(ResponseCode.AI_SQL_GENERATION_FAILED, code, exception);
+        }
+    }
+
+    /** 严格接收一个白名单 Function Call，并按函数参数类型转换为内部动作。 */
+    private AgentAction parseAction(AgentTurnRequest request, AssistantMessage output) {
+        List<AssistantMessage.ToolCall> calls = output.getToolCalls();
+        if (calls == null || calls.size() != 1) {
+            throw failure("AI_TOOL_CALLING_UNSUPPORTED");
+        }
+        AssistantMessage.ToolCall call = calls.get(0);
+        if (!"function".equalsIgnoreCase(call.type())) {
+            throw failure("AI_TOOL_CALLING_UNSUPPORTED");
+        }
+        Set<String> allowed = request.turn() == 1 ? ROUTING_ACTION_NAMES : RUNNING_ACTION_NAMES;
+        if (!allowed.contains(call.name())) {
+            throw failure("AI_TOOL_CALLING_UNSUPPORTED");
+        }
+        String arguments = call.arguments() == null || call.arguments().isBlank() ? "{}" : call.arguments();
+        try {
+            return switch (call.name()) {
+                case "accept_query" -> new AgentAction.AcceptQuery();
+                case "request_clarification" -> CLARIFICATION_CONVERTER.convert(arguments);
+                case "reject_unsupported" -> new AgentAction.RejectUnsupported();
+                case "search_schema" -> SEARCH_SCHEMA_CONVERTER.convert(arguments);
+                case "get_schema" -> GET_SCHEMA_CONVERTER.convert(arguments);
+                case "execute_readonly_sql" -> EXECUTE_SQL_CONVERTER.convert(arguments);
+                case "finish_answer" -> FINISH_ANSWER_CONVERTER.convert(arguments);
+                default -> throw failure("AI_TOOL_CALLING_UNSUPPORTED");
+            };
+        } catch (AppException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new AppException(
+                    ResponseCode.AI_SQL_GENERATION_FAILED, "AI_TOOL_CALLING_UNSUPPORTED", exception);
         }
     }
 
@@ -104,7 +228,6 @@ final class SpringAiQueryAgentModel implements QueryAgentModel {
                 .append("当前回合：").append(request.turn()).append('\n')
                 .append("已识别意图：").append(request.intent() == null ? "尚未识别" : request.intent()).append('\n')
                 .append("脱敏工具观察：\n");
-        // 只回传受控观察摘要，不把数据库完整结果或内部思维链发送给模型。
         if (request.observations().isEmpty()) {
             builder.append("无\n");
         } else {
@@ -116,20 +239,41 @@ final class SpringAiQueryAgentModel implements QueryAgentModel {
                         .append(", output=").append(observation.output()).append('\n');
             }
         }
-        builder.append("只返回完整 JSON 对象。字段包括 type,intent,tool,retrievalQuery,topK,tableNames,sql,outcome,")
-                .append("questionAnalysis,relatedTables,explanation,confidence,clarificationQuestion。\n")
-                .append(converter.getFormat());
+        builder.append(request.turn() == 1
+                ? "本回合只能调用一个路由函数。"
+                : "本回合只能调用一个工具或终态函数。");
         return builder.toString();
     }
 
-    /** 创建强制 JSON 输出、限制 token 数并设置单次请求超时的模型参数。 */
-    private OpenAiChatOptions.Builder options() {
-        OpenAiChatModel.ResponseFormat responseFormat = OpenAiChatModel.ResponseFormat.builder()
-                .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT).build();
+    /** 创建强制单 Function Call、严格参数 Schema 和单次请求超时的模型参数。 */
+    private OpenAiChatOptions.Builder options(AgentTurnRequest request) {
         return OpenAiChatOptions.builder()
-                .responseFormat(responseFormat)
+                .toolCallbacks(request.turn() == 1 ? ROUTING_ACTIONS : RUNNING_ACTIONS)
+                .toolChoice("required")
+                .parallelToolCalls(false)
+                .strict(true)
                 .maxCompletionTokens(1600)
                 .timeout(REQUEST_TIMEOUT);
+    }
+
+    /** 创建仅用于向模型声明动作的工具；核心状态机始终负责实际执行。 */
+    private static ToolCallback action(String name, String description, String inputSchema) {
+        ToolDefinition definition = ToolDefinition.builder()
+                .name(name)
+                .description(description)
+                .inputSchema(inputSchema)
+                .build();
+        return new ToolCallback() {
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return definition;
+            }
+
+            @Override
+            public String call(String toolInput) {
+                throw new IllegalStateException("Agent actions must be executed by ReadOnlyQueryAgent");
+            }
+        };
     }
 
     /** 从模型响应元数据中提取模型名称、token 用量和调用耗时。 */
@@ -144,14 +288,12 @@ final class SpringAiQueryAgentModel implements QueryAgentModel {
                 usage == null ? null : usage.getTotalTokens(), durationMs);
     }
 
-    /** 判断模型是否因输出长度限制而提前结束。 */
     private boolean isTruncated(String finishReason) {
         if (finishReason == null) return false;
         String normalized = finishReason.toLowerCase(Locale.ROOT);
         return normalized.equals("length") || normalized.contains("max_tokens");
     }
 
-    /** 沿异常链判断失败是否由请求超时引起。 */
     private boolean hasTimeoutCause(Throwable throwable) {
         Throwable current = throwable;
         while (current != null) {
@@ -163,19 +305,16 @@ final class SpringAiQueryAgentModel implements QueryAgentModel {
         return false;
     }
 
-    /** 使用单调时钟计算模型调用耗时，避免系统时间调整影响统计。 */
     private long elapsedMillis(long startedAt) {
         return Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
     }
 
-    /** 校验 AI 功能和模型客户端是否已经就绪。 */
     private void ensureAvailable() {
-        if (!properties.isEnabled() || chatClient == null) {
+        if (!properties.isEnabled() || chatModel == null) {
             throw new AppException(ResponseCode.AI_MODEL_UNAVAILABLE);
         }
     }
 
-    /** 创建带稳定细分错误码的模型生成失败异常。 */
     private AppException failure(String code) {
         return new AppException(ResponseCode.AI_SQL_GENERATION_FAILED, code);
     }

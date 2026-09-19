@@ -1,6 +1,6 @@
 package com.ltcpond.datapilot.core.query;
 
-import com.ltcpond.datapilot.ai.AgentDecision;
+import com.ltcpond.datapilot.ai.AgentAction;
 import com.ltcpond.datapilot.ai.AgentObservation;
 import com.ltcpond.datapilot.ai.AgentTurnOutcome;
 import com.ltcpond.datapilot.ai.AgentTurnRequest;
@@ -48,10 +48,6 @@ public class ReadOnlyQueryAgent {
     private static final int MAX_TEXT_LENGTH = 10_000;
     private static final int MAX_SUMMARY_LENGTH = 2_000;
     private static final int MAX_REASON_LENGTH = 512;
-    private static final Set<String> QUERY_INTENTS = Set.of("QUERY");
-    private static final Set<String> TOOLS = Set.of(
-            "search_schema", "get_schema", "execute_readonly_sql");
-
     private final QueryAgentModel model;
     private final DataPilotAiProperties properties;
     private final SchemaRetriever schemaRetriever;
@@ -126,11 +122,11 @@ public class ReadOnlyQueryAgent {
             AgentTurnOutcome modelOutcome = model.next(new AgentTurnRequest(
                     task.getQuestion(), turn, context.intent, context.observations));
             checkBoundary(context);
-            AgentDecision decision = modelOutcome.decision();
+            AgentAction action = modelOutcome.action();
 
             // 首轮只能处理结构化意图，不能直接执行工具或声明查询成功。
             if (turn == 1) {
-                handleIntent(context, decision, modelOutcome.metrics());
+                handleIntent(context, action, modelOutcome.metrics());
                 if (isTerminal(task.getStatus())) {
                     return null;
                 }
@@ -138,18 +134,21 @@ public class ReadOnlyQueryAgent {
             }
 
             // 后续回合只接受最终动作或白名单工具调用。
-            String type = normalized(decision.type());
-            if ("FINAL".equals(type)) {
-                QueryResultView result = handleFinal(context, decision, modelOutcome.metrics());
+            if (action instanceof AgentAction.FinishAnswer
+                    || action instanceof AgentAction.RequestClarification
+                    || action instanceof AgentAction.RejectUnsupported) {
+                QueryResultView result = handleFinal(context, action, modelOutcome.metrics());
                 if (result != null || isTerminal(task.getStatus())) {
                     return result;
                 }
                 continue;
             }
-            if (!"TOOL_CALL".equals(type)) {
+            if (!(action instanceof AgentAction.SearchSchema)
+                    && !(action instanceof AgentAction.GetSchema)
+                    && !(action instanceof AgentAction.ExecuteReadonlySql)) {
                 protocolFailure(context, modelOutcome.metrics(), "Agent 返回了无效动作");
             }
-            handleTool(context, decision, modelOutcome);
+            handleTool(context, action, modelOutcome);
         }
         // 回合耗尽后稳定终止，防止模型形成无限循环。
         terminate(context, "AGENT_MAX_TURNS");
@@ -157,55 +156,62 @@ public class ReadOnlyQueryAgent {
     }
 
     /** 校验并处理首轮意图，必要时直接进入澄清或不可回答终态。 */
-    private void handleIntent(Context context, AgentDecision decision, AiCallMetrics metrics) {
-        if (!"INTENT".equals(normalized(decision.type()))) {
+    private void handleIntent(Context context, AgentAction action, AiCallMetrics metrics) {
+        String intent;
+        if (action instanceof AgentAction.AcceptQuery) {
+            intent = "QUERY";
+        } else if (action instanceof AgentAction.RequestClarification) {
+            intent = "AMBIGUOUS";
+        } else if (action instanceof AgentAction.RejectUnsupported) {
+            intent = "UNSUPPORTED";
+        } else {
             protocolFailure(context, metrics, "首回合未返回意图判断");
+            return;
         }
-        String intent = normalized(decision.intent());
         LocalDateTime now = LocalDateTime.now();
         // 轨迹只记录标准化意图和调用指标，不保存模型原始输出。
-        persistStep(context, "INTENT", null, "SUCCEEDED", "识别意图：" + safe(intent),
+        persistStep(context, "INTENT", null, "SUCCEEDED", "识别意图：" + intent,
                 null, metrics.durationMs(), metrics, now, LocalDateTime.now());
         // 模糊问题以澄清终态结束，补充问题时由用户创建新任务。
-        if ("AMBIGUOUS".equals(intent)) {
-            String question = sanitize(decision.clarificationQuestion(), 1_000);
+        if (action instanceof AgentAction.RequestClarification clarification) {
+            String question = sanitize(clarification.clarificationQuestion(), 1_000);
             if (question == null || question.isBlank()) {
                 question = "请补充要查询的指标、范围或时间条件。";
             }
             context.task.setClarificationQuestion(question);
-            context.task.setQuestionAnalysis(sanitize(decision.questionAnalysis(), MAX_TEXT_LENGTH));
+            context.task.setQuestionAnalysis(sanitize(clarification.questionAnalysis(), MAX_TEXT_LENGTH));
             context.task.setDurationMs(elapsed(context.startedAt));
             stateMachine.transition(context.task, QueryStatus.NEEDS_CLARIFICATION);
             return;
         }
         // 不可回答问题不进入 Schema 或 SQL 工具循环。
-        if ("UNSUPPORTED".equals(intent)) {
+        if (action instanceof AgentAction.RejectUnsupported) {
             terminate(context, "QUESTION_NOT_ANSWERABLE");
             throw new AppException(ResponseCode.QUERY_REJECTED);
-        }
-        if (!QUERY_INTENTS.contains(intent)) {
-            protocolFailure(context, metrics, "Agent 返回了未知意图");
         }
         context.intent = intent;
         stateMachine.transition(context.task, QueryStatus.AGENT_RUNNING);
     }
 
     /** 分派白名单工具、记录安全轨迹，并根据失败次数决定重规划或终止。 */
-    private void handleTool(Context context, AgentDecision decision, AgentTurnOutcome modelOutcome) {
-        String tool = normalizedLower(decision.tool());
-        // 模型不能扩展工具集合，也不能指定当前任务之外的数据源。
-        if (!TOOLS.contains(tool)) {
-            protocolFailure(context, modelOutcome.metrics(), "Agent 请求了未授权工具");
-        }
+    private void handleTool(Context context, AgentAction action, AgentTurnOutcome modelOutcome) {
         Instant toolStarted = Instant.now();
         // 工具参数由应用校验，工具执行仍完全掌握在应用侧。
-        ToolResult result = switch (tool) {
-            case "search_schema" -> searchSchema(
-                    context, decision.retrievalQuery(), decision.topK());
-            case "get_schema" -> getSchema(context, decision.tableNames());
-            case "execute_readonly_sql" -> executeSql(context, decision.sql(), modelOutcome.metrics());
-            default -> throw new IllegalStateException("不可达工具分支");
-        };
+        String tool;
+        ToolResult result;
+        if (action instanceof AgentAction.SearchSchema search) {
+            tool = "search_schema";
+            result = searchSchema(context, search.retrievalQuery(), search.topK());
+        } else if (action instanceof AgentAction.GetSchema schema) {
+            tool = "get_schema";
+            result = getSchema(context, schema.tableNames());
+        } else if (action instanceof AgentAction.ExecuteReadonlySql execute) {
+            tool = "execute_readonly_sql";
+            result = executeSql(context, execute.sql(), modelOutcome.metrics());
+        } else {
+            protocolFailure(context, modelOutcome.metrics(), "Agent 请求了未授权工具");
+            return;
+        }
         long durationMs = elapsed(toolStarted);
         // 先持久化安全摘要，再将截断后的观察加入下一回合上下文。
         persistStep(context, "TOOL", tool, result.success ? "SUCCEEDED" : "FAILED",
@@ -363,28 +369,28 @@ public class ReadOnlyQueryAgent {
     }
 
     /** 处理模型最终动作，并确保成功响应只能基于已执行的工具结果生成。 */
-    private QueryResultView handleFinal(Context context, AgentDecision decision, AiCallMetrics metrics) {
-        String outcome = normalized(decision.outcome());
+    private QueryResultView handleFinal(Context context, AgentAction action, AiCallMetrics metrics) {
         // 模型也可在工具阶段发现条件不足并请求用户澄清。
-        if ("CLARIFY".equals(outcome)) {
-            String question = sanitize(decision.clarificationQuestion(), 1_000);
+        if (action instanceof AgentAction.RequestClarification clarification) {
+            String question = sanitize(clarification.clarificationQuestion(), 1_000);
             if (question == null || question.isBlank()) {
                 protocolFailure(context, metrics, "澄清结果缺少问题");
             }
             persistStep(context, "FINAL", null, "SUCCEEDED", "需要用户补充查询条件",
                     null, metrics.durationMs(), metrics, LocalDateTime.now(), LocalDateTime.now());
             context.task.setClarificationQuestion(question);
-            context.task.setQuestionAnalysis(sanitize(decision.questionAnalysis(), MAX_TEXT_LENGTH));
+            context.task.setQuestionAnalysis(sanitize(clarification.questionAnalysis(), MAX_TEXT_LENGTH));
             context.task.setDurationMs(elapsed(context.startedAt));
             stateMachine.transition(context.task, QueryStatus.NEEDS_CLARIFICATION);
             return null;
         }
-        if ("UNSUPPORTED".equals(outcome)) {
+        if (action instanceof AgentAction.RejectUnsupported) {
             terminate(context, "QUESTION_NOT_ANSWERABLE");
             throw new AppException(ResponseCode.QUERY_REJECTED);
         }
-        if (!"ANSWER".equals(outcome)) {
+        if (!(action instanceof AgentAction.FinishAnswer answer)) {
             protocolFailure(context, metrics, "Agent 最终结果无效");
+            return null;
         }
         // 没有成功 SQL 工具结果时，禁止模型自行声明 ANSWER。
         if (context.execution == null || context.executableSql == null) {
@@ -397,11 +403,11 @@ public class ReadOnlyQueryAgent {
 
         // 最终字段中的 SQL、行数和结果均取自应用保存的成功执行结果。
         stateMachine.transition(context.task, QueryStatus.AGENT_FINALIZING);
-        context.task.setQuestionAnalysis(sanitize(decision.questionAnalysis(), MAX_TEXT_LENGTH));
-        context.task.setRelatedTables(String.join(",", allowedRelatedTables(decision.relatedTables(), context.fullSchema)));
+        context.task.setQuestionAnalysis(sanitize(answer.questionAnalysis(), MAX_TEXT_LENGTH));
+        context.task.setRelatedTables(String.join(",", allowedRelatedTables(answer.relatedTables(), context.fullSchema)));
         context.task.setGeneratedSql(context.executableSql);
-        context.task.setExplanation(sanitize(decision.explanation(), MAX_TEXT_LENGTH));
-        context.task.setConfidence(normalizeConfidence(decision.confidence()));
+        context.task.setExplanation(sanitize(answer.explanation(), MAX_TEXT_LENGTH));
+        context.task.setConfidence(normalizeConfidence(answer.confidence()));
         context.task.setRowCount(context.execution.rows().size());
         context.task.setDurationMs(elapsed(context.startedAt));
         context.task.setErrorCode(null);
@@ -412,7 +418,7 @@ public class ReadOnlyQueryAgent {
         RetrievalView retrieval = context.retrieval.view();
         QueryResultView result = new QueryResultView(
                 context.task.getId(), QueryStatus.SUCCEEDED.name(),
-                context.task.getQuestionAnalysis(), allowedRelatedTables(decision.relatedTables(), context.fullSchema),
+                context.task.getQuestionAnalysis(), allowedRelatedTables(answer.relatedTables(), context.fullSchema),
                 context.executableSql, context.task.getExplanation(), context.task.getConfidence(),
                 context.execution.columns(), context.execution.rows(), context.execution.rows().size(),
                 context.task.getDurationMs(), retrieval);
@@ -668,21 +674,6 @@ public class ReadOnlyQueryAgent {
                 || QueryStatus.FAILED.name().equals(status)
                 || QueryStatus.CANCELLED.name().equals(status)
                 || QueryStatus.NEEDS_CLARIFICATION.name().equals(status);
-    }
-
-    /** 将协议枚举文本标准化为大写形式。 */
-    private String normalized(String value) {
-        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
-    }
-
-    /** 将工具名称标准化为小写形式。 */
-    private String normalizedLower(String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
-    }
-
-    /** 为轨迹摘要中的空值提供安全占位文本。 */
-    private String safe(String value) {
-        return value == null || value.isBlank() ? "UNKNOWN" : value;
     }
 
     /** 去除首尾空白并限制持久化文本长度。 */
