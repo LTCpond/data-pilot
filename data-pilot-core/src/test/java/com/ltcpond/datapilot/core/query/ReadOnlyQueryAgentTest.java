@@ -166,6 +166,37 @@ class ReadOnlyQueryAgentTest {
     }
 
     @Test
+    void shouldExposeValidatorViolationsAndCombineRepairHints() {
+        when(validator.validate(any()))
+                .thenReturn(SqlValidationResult.rejected(List.of(
+                        "SQL_COMMENTS_NOT_ALLOWED", "DANGEROUS_SQL_FEATURE")))
+                .thenReturn(SqlValidationResult.accepted(
+                        "SELECT COUNT(*) AS total FROM orders LIMIT 100"));
+        when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
+                .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
+        script(
+                intent("QUERY"),
+                searchTool(task.getQuestion()),
+                tool("execute_readonly_sql", "SELECT SLEEP(1) FROM orders /* retry */"),
+                tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"),
+                answer());
+
+        QueryResultView result = agent.execute(task, datasource, schema, Instant.now());
+
+        ArgumentCaptor<com.ltcpond.datapilot.ai.AgentTurnRequest> requests =
+                ArgumentCaptor.forClass(com.ltcpond.datapilot.ai.AgentTurnRequest.class);
+        verify(model, times(5)).next(requests.capture());
+        var validationObservation = requests.getAllValues().get(3).observations().get(1);
+        assertThat(validationObservation.errorKind())
+                .isEqualTo("SQL_COMMENTS_NOT_ALLOWED,DANGEROUS_SQL_FEATURE");
+        assertThat(validationObservation.output())
+                .contains("请移除 SQL 注释", "请移除锁、延时函数、文件访问等危险 SQL 结构");
+        assertThat(result.rowCount()).isEqualTo(1);
+        assertThat(task.getRepairCount()).isEqualTo(1);
+        assertThat(task.getStatus()).isEqualTo("SUCCEEDED");
+    }
+
+    @Test
     void shouldUseDistinctRetrievalQueriesAndAccumulateTablesInSchemaOrder() {
         SchemaTableView orders = table(1L, "orders");
         SchemaTableView payments = table(2L, "payments");

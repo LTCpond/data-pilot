@@ -173,7 +173,7 @@ Agent 只能调用以下工具，数据源由当前任务自动绑定，模型�
 
 单次模型请求超时为 60 秒。相同错误第一次出现时返回针对性提示，第二次额外写入 `REPLAN` 步骤并要求更换方案，第三次终止。模型调用和工具调用边界都会检查取消状态。
 
-执行错误会归类为 `SYNTAX_ERROR`、`UNKNOWN_COLUMN`、`UNKNOWN_TABLE`、`QUERY_TIMEOUT`、`PERMISSION_DENIED`、`CONNECTION_ERROR`、`TRANSIENT_ERROR` 或 `OTHER`。权限和连接错误不能通过 SQL 修复，会直接终止；API、轨迹和模型上下文只接收脱敏类型与摘要。
+SQL 校验失败会直接返回受控违规码：`EMPTY_SQL`、`INVALID_ROW_LIMIT`、`SQL_COMMENTS_NOT_ALLOWED`、`DANGEROUS_SQL_FEATURE`、`MULTIPLE_STATEMENTS`、`NON_SELECT_STATEMENT`、`SQL_PARSE_ERROR`、`SYSTEM_SCHEMA_ACCESS`、`UNAUTHORIZED_TABLE` 或 `UNKNOWN_COLUMN`；同时命中多个规则时使用逗号拼接。SQL 执行错误包括 `QUERY_TIMEOUT`、`PERMISSION_DENIED`、`CONNECTION_ERROR`、`TRANSIENT_ERROR` 或 `OTHER`。权限和连接错误不能通过 SQL 修复，会直接终止；解析器、JDBC 原始异常和堆栈不会进入模型上下文。
 
 ### 模型配置
 

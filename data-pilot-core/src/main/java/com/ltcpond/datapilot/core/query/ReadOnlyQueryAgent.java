@@ -325,11 +325,12 @@ public class ReadOnlyQueryAgent {
                 schemaPromptBuilder.allowedColumns(context.fullSchema),
                 context.task.getMaxRows()));
         if (!validation.valid()) {
-            String errorKind = validationErrorKind(validation.violations());
-            String reason = String.join(",", validation.violations());
-            insertAttempt(context, attemptNo, sql, "REJECTED", reason, metrics);
+            List<String> violations = validation.violations();
+            String errorKind = violations.isEmpty()
+                    ? "SQL_VALIDATION_FAILED" : String.join(",", violations);
+            insertAttempt(context, attemptNo, sql, "REJECTED", errorKind, metrics);
             return ToolResult.failure(errorKind, "SQL 未通过只读安全校验",
-                    validationHint(context, errorKind), false);
+                    validationHint(context, violations), false);
         }
         try {
             // 只读执行器负责最大行数、JDBC 超时和 Statement 取消。
@@ -583,24 +584,42 @@ public class ReadOnlyQueryAgent {
         task.setSchemaPromptChars(schemaPromptChars);
     }
 
-    /** 将 SQL 校验违规项归并为 Agent 可处理的安全错误分类。 */
-    private String validationErrorKind(List<String> violations) {
-        if (violations.contains("UNKNOWN_COLUMN")) return "UNKNOWN_COLUMN";
-        if (violations.contains("UNAUTHORIZED_TABLE") || violations.contains("SYSTEM_SCHEMA_ACCESS")) {
-            return "UNKNOWN_TABLE";
+    /** 根据受控 SQL 校验违规码组合可操作提示，不暴露解析器原始异常。 */
+    private String validationHint(Context context, List<String> violations) {
+        List<String> hints = new ArrayList<>();
+        if (violations.contains("EMPTY_SQL")) {
+            hints.add("请提供一条非空 SQL。");
         }
-        return "SYNTAX_ERROR";
-    }
-
-    /** 根据 SQL 校验错误生成不暴露内部异常的修复提示。 */
-    private String validationHint(Context context, String errorKind) {
-        if ("UNKNOWN_COLUMN".equals(errorKind)) {
-            return "请调用 get_schema 核对列名后重写 SQL。";
+        if (violations.contains("INVALID_ROW_LIMIT")) {
+            hints.add("查询行数限制无效。");
         }
-        if ("UNKNOWN_TABLE".equals(errorKind)) {
-            return tableHint(context);
+        if (violations.contains("SQL_COMMENTS_NOT_ALLOWED")) {
+            hints.add("请移除 SQL 注释。");
         }
-        return "请只生成一条无注释的 SELECT 或 WITH...SELECT，并使用已获取的 Schema。";
+        if (violations.contains("DANGEROUS_SQL_FEATURE")) {
+            hints.add("请移除锁、延时函数、文件访问等危险 SQL 结构。");
+        }
+        if (violations.contains("MULTIPLE_STATEMENTS")) {
+            hints.add("一次只能生成一条 SQL。");
+        }
+        if (violations.contains("NON_SELECT_STATEMENT")) {
+            hints.add("只能生成 SELECT 或 WITH...SELECT。");
+        }
+        if (violations.contains("SQL_PARSE_ERROR")) {
+            hints.add("请检查 SQL 语法。");
+        }
+        if (violations.contains("SYSTEM_SCHEMA_ACCESS")) {
+            hints.add("禁止访问系统 Schema，请只使用当前数据源已同步的业务表。");
+        }
+        if (violations.contains("UNAUTHORIZED_TABLE")) {
+            hints.add(tableHint(context));
+        }
+        if (violations.contains("UNKNOWN_COLUMN")) {
+            hints.add("请调用 get_schema 核对列名后重写 SQL。");
+        }
+        return hints.isEmpty()
+                ? "请根据校验错误修改 SQL。"
+                : String.join(" ", hints);
     }
 
     /** 根据执行错误类型生成受控且可操作的重新规划提示。 */
