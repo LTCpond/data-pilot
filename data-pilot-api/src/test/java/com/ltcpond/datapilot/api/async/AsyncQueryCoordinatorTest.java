@@ -30,9 +30,10 @@ class AsyncQueryCoordinatorTest {
         when(queryService.createTask(any())).thenReturn(task(11L, "CREATED"));
         AsyncQueryCoordinator coordinator = new AsyncQueryCoordinator(queryService, resultStore, executor);
 
-        AsyncQueryAcceptedView result = coordinator.submit(new QueryCommand(1L, "查询订单", 100));
+        AsyncQueryAcceptedView result = coordinator.submit(new QueryCommand(1L, null, "查询订单", 100));
 
         assertThat(result.queryId()).isEqualTo(11L);
+        assertThat(result.conversationId()).isEqualTo("conversation-1");
         assertThat(result.eventsUrl()).isEqualTo("/api/queries/11/events");
         verify(resultStore).requireAvailable();
         verify(executor).execute(any(Runnable.class));
@@ -47,7 +48,7 @@ class AsyncQueryCoordinatorTest {
         doThrow(new TaskRejectedException("full")).when(executor).execute(any(Runnable.class));
         AsyncQueryCoordinator coordinator = new AsyncQueryCoordinator(queryService, resultStore, executor);
 
-        assertThatThrownBy(() -> coordinator.submit(new QueryCommand(1L, "查询订单", 100)))
+        assertThatThrownBy(() -> coordinator.submit(new QueryCommand(1L, null, "查询订单", 100)))
                 .isInstanceOfSatisfying(AppException.class, exception ->
                         assertThat(exception.getResponseCode()).isEqualTo(ResponseCode.ASYNC_QUERY_QUEUE_FULL));
         verify(queryService).discardCreatedTask(12L);
@@ -55,7 +56,7 @@ class AsyncQueryCoordinatorTest {
 
     private QueryTaskView task(long id, String status) {
         return new QueryTaskView(
-                id, 1L, "查询订单", status, null, List.of(), null, null,
+                id, 1L, "conversation-1", "查询订单", null, status, null, List.of(), null, null,
                 null, 0, null, null, null, null,
                 null, LocalDateTime.now(), null, null);
     }

@@ -7,9 +7,11 @@ public record AgentTurnRequest(
         String question,
         int turn,
         String intent,
+        List<ConversationTurn> history,
         List<AgentObservation> observations) {
 
     public AgentTurnRequest {
+        history = history == null ? List.of() : List.copyOf(history);
         observations = observations == null ? List.of() : List.copyOf(observations);
     }
 }

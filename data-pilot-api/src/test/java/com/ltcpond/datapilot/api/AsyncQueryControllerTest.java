@@ -8,6 +8,8 @@ import com.ltcpond.datapilot.api.controller.AsyncQueryController;
 import com.ltcpond.datapilot.api.exception.ApiExceptionHandler;
 import com.ltcpond.datapilot.common.api.ResponseCode;
 import com.ltcpond.datapilot.common.exception.AppException;
+import com.ltcpond.datapilot.core.query.QueryCommand;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
@@ -15,6 +17,7 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -28,14 +31,19 @@ class AsyncQueryControllerTest {
     void shouldAcceptTaskAndReturnResourceUrls() throws Exception {
         AsyncQueryCoordinator coordinator = mock(AsyncQueryCoordinator.class);
         when(coordinator.submit(any())).thenReturn(new AsyncQueryAcceptedView(
-                9L, "CREATED", "/api/queries/9/events", "/api/queries/9/result"));
+                9L, "conversation-1", "CREATED", "/api/queries/9/events", "/api/queries/9/result"));
 
         mockMvc(coordinator).perform(post("/api/datasources/1/queries")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"question\":\"查询订单数量\",\"maxRows\":100}"))
+                        .content("{\"conversationId\":\"conversation-1\",\"question\":\"查询订单数量\",\"maxRows\":100}"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.queryId").value(9))
+                .andExpect(jsonPath("$.data.conversationId").value("conversation-1"))
                 .andExpect(jsonPath("$.data.eventsUrl").value("/api/queries/9/events"));
+        ArgumentCaptor<QueryCommand> command = ArgumentCaptor.forClass(QueryCommand.class);
+        verify(coordinator).submit(command.capture());
+        org.assertj.core.api.Assertions.assertThat(command.getValue().conversationId())
+                .isEqualTo("conversation-1");
     }
 
     @Test

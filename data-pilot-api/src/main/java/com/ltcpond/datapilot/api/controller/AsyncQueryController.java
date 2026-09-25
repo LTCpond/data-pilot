@@ -35,7 +35,7 @@ public class AsyncQueryController {
             @PathVariable long datasourceId,
             @Valid @RequestBody QueryRequest request) {
         AsyncQueryAcceptedView result = coordinator.submit(new QueryCommand(
-                datasourceId, request.question(), request.maxRows()));
+                datasourceId, request.conversationId(), request.question(), request.maxRows()));
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(result));
     }
 

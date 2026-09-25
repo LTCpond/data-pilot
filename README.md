@@ -264,6 +264,18 @@ CREATED → AGENT_ROUTING → AGENT_RUNNING → AGENT_FINALIZING → SUCCEEDED
 
 同时支持 `NEEDS_CLARIFICATION`、`FAILED`、`CANCEL_REQUESTED` 和 `CANCELLED`。`NEEDS_CLARIFICATION` 是终态：结果接口返回 HTTP 200、空 `result` 和 `clarificationQuestion`，用户补充后需要提交独立的新任务。其他运行中状态的结果接口返回 HTTP 202。
 
+连续问数通过 `conversationId` 串联同一数据源的任务。首次提交时省略该字段，HTTP 202 响应会返回新生成的 `conversationId`；后续提问或回答澄清问题时，在请求体中复用该 ID。会话不可切换数据源，否则返回 HTTP 409。任务详情包含原始 `question` 和首轮消歧后保存的 `resolvedQuestion`，待澄清任务的后者可能为空。
+
+```json
+{"question":"查询最近30天各店铺销售额"}
+```
+
+```json
+{"conversationId":"<首次提交返回的ID>","question":"那上个月呢？"}
+```
+
+Agent 首轮只读取当前任务之前最近 3 条 `SUCCEEDED` 或 `NEEDS_CLARIFICATION` 任务的原始问题、完整问题、状态和澄清问题。首轮接受查询后，后续回合只使用 `resolvedQuestion` 和当前任务的工具观察；历史 SQL 与结果行不进入会话上下文。客户端开启新话题时应省略 `conversationId`，由服务端生成新会话。
+
 `GET /api/queries/{queryId}/steps` 按 `stepNo` 返回持久化轨迹。步骤类型包括 `INTENT`、`TOOL`、`REPLAN` 和 `FINAL`，只包含工具名称、状态、安全摘要、错误分类、耗时和 token 用量，不保存模型思维链、原始 Prompt、业务结果行、凭据或未脱敏异常。
 
 | SSE 事件 | 用途 |
@@ -294,7 +306,7 @@ cd ..\data-pilot-web
 
 打开 `http://127.0.0.1:5173`。开发环境下 Vite 会把 `/api` 代理到 `http://127.0.0.1:8080`。
 
-前端覆盖数据源注册、Schema 浏览、异步问数、Agent 时间线、SSE 重连去重、澄清后重新提问、结果表格、RAG 指标、任务取消和查询历史。浏览器只在 `sessionStorage` 保存恢复任务需要的 `queryId` 和 `datasourceId`，不会持久化数据库密码、模型密钥和业务查询结果。
+前端覆盖数据源注册、Schema 浏览、异步问数、Agent 时间线、SSE 重连去重、澄清后继续提问、结果表格、RAG 指标、任务取消和查询历史。浏览器只在 `sessionStorage` 保存恢复任务与会话需要的 `queryId`、`datasourceId` 和 `conversationId`，不会持久化数据库密码、模型密钥和业务查询结果。
 
 ## 构建、测试与评测
 

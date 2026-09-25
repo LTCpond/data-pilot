@@ -18,7 +18,9 @@ public class QueryTaskEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long datasourceId;
+    private String conversationId;
     private String question;
+    private String resolvedQuestion;
     private Integer maxRows;
     private String status;
     private String questionAnalysis;

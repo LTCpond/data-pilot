@@ -13,8 +13,8 @@ public sealed interface AgentAction permits
         AgentAction.ExecuteReadonlySql,
         AgentAction.FinishAnswer {
 
-    /** 接受当前问题并进入只读查询工具循环。 */
-    record AcceptQuery() implements AgentAction {
+    /** 接受当前问题并返回脱离历史仍可独立理解的完整问题。 */
+    record AcceptQuery(String resolvedQuestion) implements AgentAction {
     }
 
     /** 请求用户补充查询条件。 */

@@ -34,7 +34,7 @@ public class AsyncQueryCoordinator {
             throw new AppException(ResponseCode.ASYNC_QUERY_QUEUE_FULL);
         }
         return new AsyncQueryAcceptedView(
-                task.id(), task.status(),
+                task.id(), task.conversationId(), task.status(),
                 "/api/queries/" + task.id() + "/events",
                 "/api/queries/" + task.id() + "/result");
     }

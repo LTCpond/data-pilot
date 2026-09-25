@@ -71,7 +71,7 @@ class QueryControllerTest {
     private QueryTaskView task() {
         LocalDateTime now = LocalDateTime.now();
         return new QueryTaskView(
-                9L, 1L, "查询订单数量", "SUCCEEDED", null, List.of("orders"),
+                9L, 1L, "conversation-1", "查询订单数量", "查询订单数量", "SUCCEEDED", null, List.of("orders"),
                 "SELECT COUNT(*) FROM orders", null, null, 0, 1, 120L,
                 null, null, null, now, now, null);
     }

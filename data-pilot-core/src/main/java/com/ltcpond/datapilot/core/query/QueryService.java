@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /** 创建和管理问数任务，实际执行统一委托给受控只读查询 Agent。 */
 @Service
@@ -39,9 +40,24 @@ public class QueryService {
         if (datasourceService.schema(command.datasourceId()).tables().isEmpty()) {
             throw new AppException(ResponseCode.DATASOURCE_SCHEMA_NOT_READY);
         }
+        String conversationId = command.conversationId();
+        if (conversationId == null) {
+            conversationId = UUID.randomUUID().toString();
+        } else {
+            conversationId = conversationId.strip();
+            if (conversationId.isEmpty() || conversationId.length() > 64) {
+                throw new AppException(ResponseCode.INVALID_REQUEST);
+            }
+            taskStore.findConversationDatasourceId(conversationId).ifPresent(datasourceId -> {
+                if (datasourceId != command.datasourceId()) {
+                    throw new AppException(ResponseCode.CONVERSATION_DATASOURCE_MISMATCH);
+                }
+            });
+        }
         LocalDateTime now = LocalDateTime.now();
         QueryTaskEntity task = new QueryTaskEntity();
         task.setDatasourceId(command.datasourceId());
+        task.setConversationId(conversationId);
         task.setQuestion(command.question().trim());
         task.setMaxRows(normalizeMaxRows(command.maxRows()));
         task.setStatus(QueryStatus.CREATED.name());
@@ -154,7 +170,8 @@ public class QueryService {
 
     private QueryTaskView toView(QueryTaskEntity task) {
         return new QueryTaskView(
-                task.getId(), task.getDatasourceId(), task.getQuestion(), task.getStatus(),
+                task.getId(), task.getDatasourceId(), task.getConversationId(),
+                task.getQuestion(), task.getResolvedQuestion(), task.getStatus(),
                 task.getQuestionAnalysis(), split(task.getRelatedTables()), task.getGeneratedSql(),
                 task.getExplanation(), task.getConfidence(), task.getRepairCount(), task.getRowCount(),
                 task.getDurationMs(), task.getErrorCode(), task.getClarificationQuestion(),

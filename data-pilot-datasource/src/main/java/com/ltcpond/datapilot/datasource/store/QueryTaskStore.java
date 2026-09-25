@@ -10,6 +10,8 @@ import com.ltcpond.datapilot.datasource.mapper.AgentStepMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -50,6 +52,32 @@ public class QueryTaskStore {
                 .eq(QueryTaskEntity::getDatasourceId, datasourceId)
                 .orderByDesc(QueryTaskEntity::getCreatedAt)
                 .last("LIMIT 100"));
+    }
+
+    /** 查找会话已绑定的数据源，供创建任务时拒绝跨数据源复用。 */
+    public Optional<Long> findConversationDatasourceId(String conversationId) {
+        List<QueryTaskEntity> tasks = taskMapper.selectList(Wrappers.<QueryTaskEntity>lambdaQuery()
+                .select(QueryTaskEntity::getDatasourceId)
+                .eq(QueryTaskEntity::getConversationId, conversationId)
+                .orderByAsc(QueryTaskEntity::getId)
+                .last("LIMIT 1"));
+        return tasks.stream().findFirst().map(QueryTaskEntity::getDatasourceId);
+    }
+
+    /** 按创建顺序返回当前任务之前最近三轮成功或待澄清任务。 */
+    public List<QueryTaskEntity> findRecentConversationTasks(
+            String conversationId, long datasourceId, long beforeTaskId, int limit) {
+        int boundedLimit = Math.max(1, Math.min(limit, 3));
+        List<QueryTaskEntity> tasks = new ArrayList<>(taskMapper.selectList(
+                Wrappers.<QueryTaskEntity>lambdaQuery()
+                        .eq(QueryTaskEntity::getConversationId, conversationId)
+                        .eq(QueryTaskEntity::getDatasourceId, datasourceId)
+                        .lt(QueryTaskEntity::getId, beforeTaskId)
+                        .in(QueryTaskEntity::getStatus, "SUCCEEDED", "NEEDS_CLARIFICATION")
+                        .orderByDesc(QueryTaskEntity::getId)
+                        .last("LIMIT " + boundedLimit)));
+        Collections.reverse(tasks);
+        return tasks;
     }
 
     /** 应用启动时清理非终态任务，避免重复调用模型或业务数据库。 */

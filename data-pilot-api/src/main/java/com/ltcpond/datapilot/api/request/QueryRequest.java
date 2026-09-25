@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 
 /** 自然语言问数请求。 */
 public record QueryRequest(
+        @Size(max = 64) String conversationId,
         @NotBlank @Size(max = 1000) String question,
         @Min(1) @Max(200) Integer maxRows) {
 }

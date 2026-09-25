@@ -5,6 +5,7 @@ import com.ltcpond.datapilot.ai.AgentObservation;
 import com.ltcpond.datapilot.ai.AgentTurnOutcome;
 import com.ltcpond.datapilot.ai.AgentTurnRequest;
 import com.ltcpond.datapilot.ai.AiCallMetrics;
+import com.ltcpond.datapilot.ai.ConversationTurn;
 import com.ltcpond.datapilot.ai.DataPilotAiProperties;
 import com.ltcpond.datapilot.ai.QueryAgentModel;
 import com.ltcpond.datapilot.common.api.ResponseCode;
@@ -56,6 +57,7 @@ public class ReadOnlyQueryAgent {
     private final ReadOnlyQueryExecutor queryExecutor;
     private final CredentialCipher credentialCipher;
     private final QueryTaskStore taskStore;
+    private final ConversationContextService conversationContextService;
     private final QueryStateMachine stateMachine;
     private final QueryResultSink resultSink;
     private final AgentStepEventPublisher eventPublisher;
@@ -71,11 +73,12 @@ public class ReadOnlyQueryAgent {
             ReadOnlyQueryExecutor queryExecutor,
             CredentialCipher credentialCipher,
             QueryTaskStore taskStore,
+            ConversationContextService conversationContextService,
             QueryStateMachine stateMachine,
             QueryResultSink resultSink,
             ObjectProvider<AgentStepEventPublisher> eventPublisherProvider) {
         this(model, properties, schemaRetriever, schemaPromptBuilder, sqlValidator, queryExecutor,
-                credentialCipher, taskStore, stateMachine, resultSink,
+                credentialCipher, taskStore, conversationContextService, stateMachine, resultSink,
                 eventPublisherProvider.getIfAvailable(() -> ignored -> { }));
     }
 
@@ -89,6 +92,7 @@ public class ReadOnlyQueryAgent {
             ReadOnlyQueryExecutor queryExecutor,
             CredentialCipher credentialCipher,
             QueryTaskStore taskStore,
+            ConversationContextService conversationContextService,
             QueryStateMachine stateMachine,
             QueryResultSink resultSink,
             AgentStepEventPublisher eventPublisher) {
@@ -100,6 +104,7 @@ public class ReadOnlyQueryAgent {
         this.queryExecutor = queryExecutor;
         this.credentialCipher = credentialCipher;
         this.taskStore = taskStore;
+        this.conversationContextService = conversationContextService;
         this.stateMachine = stateMachine;
         this.resultSink = resultSink;
         this.eventPublisher = eventPublisher;
@@ -113,6 +118,7 @@ public class ReadOnlyQueryAgent {
             Instant startedAt) {
         // 每个任务使用独立上下文，避免数据源、观察和失败计数相互污染。
         Context context = new Context(task, datasource, fullSchema, startedAt);
+        List<ConversationTurn> history = conversationContextService.load(task);
         // 先进入路由阶段，再开始受最大回合数约束的模型循环。
         stateMachine.transition(task, QueryStatus.AGENT_ROUTING);
 
@@ -120,7 +126,8 @@ public class ReadOnlyQueryAgent {
             // 模型调用前后都检查取消和总超时，避免取消请求继续消耗资源。
             checkBoundary(context);
             AgentTurnOutcome modelOutcome = model.next(new AgentTurnRequest(
-                    task.getQuestion(), turn, context.intent, context.observations));
+                    turn == 1 ? task.getQuestion() : context.resolvedQuestion,
+                    turn, context.intent, turn == 1 ? history : List.of(), context.observations));
             checkBoundary(context);
             AgentAction action = modelOutcome.action();
 
@@ -158,7 +165,15 @@ public class ReadOnlyQueryAgent {
     /** 校验并处理首轮意图，必要时直接进入澄清或不可回答终态。 */
     private void handleIntent(Context context, AgentAction action, AiCallMetrics metrics) {
         String intent;
-        if (action instanceof AgentAction.AcceptQuery) {
+        if (action instanceof AgentAction.AcceptQuery accept) {
+            String resolvedQuestion = accept.resolvedQuestion() == null
+                    ? null : accept.resolvedQuestion().strip();
+            if (resolvedQuestion == null || resolvedQuestion.isBlank()
+                    || resolvedQuestion.length() > 2_000) {
+                protocolFailure(context, metrics, "完整问题为空或超过长度限制");
+            }
+            context.resolvedQuestion = resolvedQuestion;
+            context.task.setResolvedQuestion(resolvedQuestion);
             intent = "QUERY";
         } else if (action instanceof AgentAction.RequestClarification) {
             intent = "AMBIGUOUS";
@@ -710,6 +725,7 @@ public class ReadOnlyQueryAgent {
         private int sqlAttemptNo;
         private int totalFailures;
         private String intent;
+        private String resolvedQuestion;
         private SchemaRetrievalResult retrieval;
         private QueryExecutionResult execution;
         private String executableSql;

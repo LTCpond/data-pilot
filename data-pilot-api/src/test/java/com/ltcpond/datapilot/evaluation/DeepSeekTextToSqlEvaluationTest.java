@@ -96,7 +96,7 @@ class DeepSeekTextToSqlEvaluationTest {
         com.ltcpond.datapilot.core.query.RetrievalView retrieval = null;
         try {
             QueryTaskView task = queryService.createTask(
-                    new QueryCommand(datasourceId, evaluationCase.question(), 200));
+                    new QueryCommand(datasourceId, null, evaluationCase.question(), 200));
             QueryResultView generated = queryService.executeTask(task.id());
             taskId = task.id();
             if (generated == null) {

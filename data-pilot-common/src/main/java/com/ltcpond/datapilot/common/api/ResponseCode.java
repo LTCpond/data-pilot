@@ -22,6 +22,7 @@ public enum ResponseCode {
     DUPLICATE_DATASOURCE_NAME(40901, 409, "数据源名称已存在"),
     DATASOURCE_SCHEMA_NOT_READY(40902, 409, "数据源 Schema 尚未就绪"),
     QUERY_TASK_CANCELLED(40904, 409, "查询任务已取消"),
+    CONVERSATION_DATASOURCE_MISMATCH(40905, 409, "问数会话已绑定其他数据源"),
 
     QUERY_RESULT_EXPIRED(41001, 410, "查询结果已过期"),
     QUERY_REJECTED(42201, 422, "问题或生成的 SQL 已被拒绝"),

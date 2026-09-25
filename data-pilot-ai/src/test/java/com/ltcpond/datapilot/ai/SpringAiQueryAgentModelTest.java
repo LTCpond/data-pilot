@@ -27,13 +27,14 @@ class SpringAiQueryAgentModelTest {
 
     @Test
     void shouldForceSingleStrictRoutingFunction() {
-        ChatModel chatModel = modelReturningTool("accept_query", "{}");
+        ChatModel chatModel = modelReturningTool("accept_query", "{\"resolvedQuestion\":\"查询订单\"}");
         SpringAiQueryAgentModel model = new SpringAiQueryAgentModel(enabled(), chatModel);
 
-        AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询订单", 1, null, List.of()));
+        AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询订单", 1, null, List.of(), List.of()));
 
         assertThat(outcome.action()).isInstanceOf(AgentAction.AcceptQuery.class);
-        assertThat(outcome.metrics().promptVersion()).isEqualTo("data-agent-v4");
+        assertThat(outcome.action()).isEqualTo(new AgentAction.AcceptQuery("查询订单"));
+        assertThat(outcome.metrics().promptVersion()).isEqualTo("data-agent-v5");
         ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(prompt.capture());
         assertThat(prompt.getValue().getContents())
@@ -56,7 +57,7 @@ class SpringAiQueryAgentModelTest {
                 "search_schema", "{\"retrievalQuery\":\"订单与退款关联\",\"topK\":6}");
         SpringAiQueryAgentModel model = new SpringAiQueryAgentModel(enabled(), chatModel);
 
-        AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询退款订单", 2, "QUERY", List.of()));
+        AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询退款订单", 2, "QUERY", List.of(), List.of()));
 
         assertThat(outcome.action()).isEqualTo(new AgentAction.SearchSchema("订单与退款关联", 6));
         ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
@@ -69,6 +70,30 @@ class SpringAiQueryAgentModelTest {
     }
 
     @Test
+    void shouldRenderConversationOnlyInFirstTurn() {
+        List<ConversationTurn> history = List.of(new ConversationTurn(
+                "查一下销售情况", null, "NEEDS_CLARIFICATION", "要查询哪个时间范围？"));
+        ChatModel routingChat = modelReturningTool(
+                "accept_query", "{\"resolvedQuestion\":\"查询最近30天的销售情况\"}");
+        SpringAiQueryAgentModel routing = new SpringAiQueryAgentModel(enabled(), routingChat);
+        routing.next(new AgentTurnRequest("最近30天", 1, null, history, List.of()));
+        ArgumentCaptor<Prompt> firstPrompt = ArgumentCaptor.forClass(Prompt.class);
+        verify(routingChat).call(firstPrompt.capture());
+        assertThat(firstPrompt.getValue().getContents())
+                .contains("查一下销售情况", "要查询哪个时间范围？", "当前用户问题：最近30天");
+
+        ChatModel runningChat = modelReturningTool(
+                "search_schema", "{\"retrievalQuery\":\"销售情况\",\"topK\":6}");
+        SpringAiQueryAgentModel running = new SpringAiQueryAgentModel(enabled(), runningChat);
+        running.next(new AgentTurnRequest("查询最近30天的销售情况", 2, "QUERY", history, List.of()));
+        ArgumentCaptor<Prompt> laterPrompt = ArgumentCaptor.forClass(Prompt.class);
+        verify(runningChat).call(laterPrompt.capture());
+        assertThat(laterPrompt.getValue().getContents())
+                .contains("完整问题：查询最近30天的销售情况")
+                .doesNotContain("查一下销售情况", "要查询哪个时间范围？");
+    }
+
+    @Test
     void shouldParseConstrainedFinalAction() {
         ChatModel chatModel = modelReturningTool(
                 "finish_answer", """
@@ -77,7 +102,7 @@ class SpringAiQueryAgentModelTest {
                         """);
         SpringAiQueryAgentModel model = new SpringAiQueryAgentModel(enabled(), chatModel);
 
-        AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询订单", 4, "QUERY", List.of()));
+        AgentTurnOutcome outcome = model.next(new AgentTurnRequest("查询订单", 4, "QUERY", List.of(), List.of()));
 
         assertThat(outcome.action()).isEqualTo(new AgentAction.FinishAnswer(
                 "统计订单数量", List.of("orders"), "返回订单总数", new BigDecimal("0.95")));
@@ -88,7 +113,7 @@ class SpringAiQueryAgentModelTest {
         SpringAiQueryAgentModel model = new SpringAiQueryAgentModel(
                 enabled(), modelReturningMessage("not-json-secret"));
 
-        assertThatThrownBy(() -> model.next(new AgentTurnRequest("查询订单", 1, null, List.of())))
+        assertThatThrownBy(() -> model.next(new AgentTurnRequest("查询订单", 1, null, List.of(), List.of())))
                 .isInstanceOfSatisfying(AppException.class,
                         exception -> assertThat(exception.getDetailCode())
                                 .isEqualTo("AI_TOOL_CALLING_UNSUPPORTED"))
@@ -100,7 +125,7 @@ class SpringAiQueryAgentModelTest {
         SpringAiQueryAgentModel model = new SpringAiQueryAgentModel(
                 enabled(), modelReturningTool("execute_readonly_sql", "{\"sql\":\"SELECT 1\"}"));
 
-        assertThatThrownBy(() -> model.next(new AgentTurnRequest("查询订单", 1, null, List.of())))
+        assertThatThrownBy(() -> model.next(new AgentTurnRequest("查询订单", 1, null, List.of(), List.of())))
                 .isInstanceOfSatisfying(AppException.class,
                         exception -> assertThat(exception.getDetailCode())
                                 .isEqualTo("AI_TOOL_CALLING_UNSUPPORTED"));

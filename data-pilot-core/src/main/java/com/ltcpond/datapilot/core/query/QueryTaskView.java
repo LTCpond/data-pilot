@@ -8,7 +8,9 @@ import java.util.List;
 public record QueryTaskView(
         long id,
         long datasourceId,
+        String conversationId,
         String question,
+        String resolvedQuestion,
         String status,
         String questionAnalysis,
         List<String> relatedTables,

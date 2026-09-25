@@ -1,6 +1,8 @@
 package com.ltcpond.datapilot.core.query;
 
 import com.ltcpond.datapilot.ai.DataPilotAiProperties;
+import com.ltcpond.datapilot.common.api.ResponseCode;
+import com.ltcpond.datapilot.common.exception.AppException;
 import com.ltcpond.datapilot.core.datasource.DatasourceSchemaView;
 import com.ltcpond.datapilot.core.datasource.DatasourceService;
 import com.ltcpond.datapilot.core.datasource.SchemaTableView;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -67,11 +70,35 @@ class QueryServiceTest {
 
     @Test
     void shouldCreateTaskWithoutRunningAgentAndClampRows() {
-        QueryTaskView task = service.createTask(new QueryCommand(1L, " 查询订单 ", 999));
+        QueryTaskView task = service.createTask(new QueryCommand(1L, null, " 查询订单 ", 999));
 
         assertThat(task.id()).isEqualTo(9L);
         assertThat(task.status()).isEqualTo("CREATED");
+        assertThat(task.conversationId()).isNotBlank();
         verify(agent, never()).execute(any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldPreserveConversationIdForFollowUp() {
+        when(taskStore.findConversationDatasourceId("conversation-1")).thenReturn(Optional.of(1L));
+
+        QueryTaskView task = service.createTask(new QueryCommand(
+                1L, "conversation-1", "那上个月呢？", 100));
+
+        assertThat(task.conversationId()).isEqualTo("conversation-1");
+        assertThat(task.question()).isEqualTo("那上个月呢？");
+    }
+
+    @Test
+    void shouldRejectConversationBoundToAnotherDatasource() {
+        when(taskStore.findConversationDatasourceId("conversation-1")).thenReturn(Optional.of(2L));
+
+        assertThatThrownBy(() -> service.createTask(new QueryCommand(
+                1L, "conversation-1", "查询订单", 100)))
+                .isInstanceOfSatisfying(AppException.class, exception ->
+                        assertThat(exception.getResponseCode())
+                                .isEqualTo(ResponseCode.CONVERSATION_DATASOURCE_MISMATCH));
+        verify(taskStore, never()).insertTask(any());
     }
 
     @Test

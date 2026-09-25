@@ -3,6 +3,7 @@ package com.ltcpond.datapilot.core.query;
 import com.ltcpond.datapilot.ai.AgentAction;
 import com.ltcpond.datapilot.ai.AgentTurnOutcome;
 import com.ltcpond.datapilot.ai.AiCallMetrics;
+import com.ltcpond.datapilot.ai.ConversationTurn;
 import com.ltcpond.datapilot.ai.DataPilotAiProperties;
 import com.ltcpond.datapilot.ai.QueryAgentModel;
 import com.ltcpond.datapilot.common.api.ResponseCode;
@@ -49,6 +50,7 @@ class ReadOnlyQueryAgentTest {
     private ReadOnlyQueryExecutor executor;
     private CredentialCipher cipher;
     private QueryTaskStore store;
+    private ConversationContextService conversationContextService;
     private QueryResultSink sink;
     private DataPilotAiProperties properties;
     private ReadOnlyQueryAgent agent;
@@ -65,6 +67,7 @@ class ReadOnlyQueryAgentTest {
         executor = mock(ReadOnlyQueryExecutor.class);
         cipher = mock(CredentialCipher.class);
         store = mock(QueryTaskStore.class);
+        conversationContextService = mock(ConversationContextService.class);
         sink = mock(QueryResultSink.class);
         properties = new DataPilotAiProperties();
         properties.setMaximumAgentTurns(8);
@@ -105,7 +108,7 @@ class ReadOnlyQueryAgentTest {
         QueryStateMachine machine = new QueryStateMachine(store, ignored -> { });
         agent = new ReadOnlyQueryAgent(
                 model, properties, schemaRetriever, new SchemaPromptBuilder(), validator, executor,
-                cipher, store, machine, sink, ignored -> { });
+                cipher, store, conversationContextService, machine, sink, ignored -> { });
     }
 
     @Test
@@ -141,6 +144,35 @@ class ReadOnlyQueryAgentTest {
         assertThat(result).isNull();
         assertThat(task.getStatus()).isEqualTo("NEEDS_CLARIFICATION");
         assertThat(task.getClarificationQuestion()).isEqualTo("要查询哪个时间范围？");
+    }
+
+    @Test
+    void shouldUseHistoryOnlyForRoutingAndResolvedQuestionAfterwards() {
+        task.setQuestion("那上个月呢？");
+        task.setConversationId("conversation-1");
+        String resolved = "查询上个月各店铺销售额";
+        List<ConversationTurn> history = List.of(new ConversationTurn(
+                "查询最近30天各店铺销售额", "查询最近30天各店铺销售额",
+                "SUCCEEDED", null));
+        when(conversationContextService.load(task)).thenReturn(history);
+        when(schemaRetriever.retrieve(datasource, schema, resolved, 6)).thenReturn(retrieval);
+        when(executor.execute(any(), any(), any(Integer.class), any(Long.class)))
+                .thenReturn(new QueryExecutionResult(List.of("total"), List.of(Map.of("total", 3))));
+        script(new AgentAction.AcceptQuery(resolved), searchTool(resolved),
+                tool("execute_readonly_sql", "SELECT COUNT(*) AS total FROM orders"), answer());
+
+        agent.execute(task, datasource, schema, Instant.now());
+
+        ArgumentCaptor<com.ltcpond.datapilot.ai.AgentTurnRequest> requests =
+                ArgumentCaptor.forClass(com.ltcpond.datapilot.ai.AgentTurnRequest.class);
+        verify(model, times(4)).next(requests.capture());
+        assertThat(requests.getAllValues().getFirst().question()).isEqualTo("那上个月呢？");
+        assertThat(requests.getAllValues().getFirst().history()).isEqualTo(history);
+        assertThat(requests.getAllValues().subList(1, 4)).allSatisfy(request -> {
+            assertThat(request.question()).isEqualTo(resolved);
+            assertThat(request.history()).isEmpty();
+        });
+        assertThat(task.getResolvedQuestion()).isEqualTo(resolved);
     }
 
     @Test
@@ -327,7 +359,7 @@ class ReadOnlyQueryAgentTest {
 
     private AgentAction intent(String intent) {
         return switch (intent) {
-            case "QUERY" -> new AgentAction.AcceptQuery();
+            case "QUERY" -> new AgentAction.AcceptQuery(task.getQuestion());
             case "AMBIGUOUS" -> new AgentAction.RequestClarification(
                     "识别查询意图", "请补充查询条件");
             case "UNSUPPORTED" -> new AgentAction.RejectUnsupported();
